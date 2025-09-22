@@ -101,6 +101,32 @@ def analyze_market_structure(df):
     
     return "Undefined"
 
+# 🔹 NEW: Detect consolidation breakout
+def detect_range_breakout(df, lookback=10, min_range_pct=3):
+    """
+    Detect breakout from a small consolidation range within an uptrend.
+    """
+    if len(df) < lookback + 1:
+        return None
+
+    recent_high = df['high'].iloc[-lookback:-1].max()
+    recent_low = df['low'].iloc[-lookback:-1].min()
+    last_close = df['close'].iloc[-1]
+    last_volume = df['volume'].iloc[-1]
+    avg_volume = df['volume'].rolling(20).mean().iloc[-1]
+    
+    # Define range tightness (% difference between high and low)
+    range_pct = ((recent_high - recent_low) / recent_low) * 100
+
+    breakout = None
+    if range_pct <= min_range_pct:  # Consolidation detected
+        if last_close > recent_high and last_volume > 1.5 * avg_volume:
+            breakout = "Bullish Range Breakout"
+        elif last_close < recent_low and last_volume > 1.5 * avg_volume:
+            breakout = "Bearish Range Breakdown"
+    
+    return breakout
+
 def analyze_stock_advanced(alice, token, strategy, exchange='NSE'):
     """Analyze stock using advanced strategies."""
     try:
@@ -133,27 +159,29 @@ def analyze_stock_advanced(alice, token, strategy, exchange='NSE'):
         
         # Calculate overall strength based on strategy
         if strategy == "Price Action Breakout":
-            # Strong breakouts with volume confirmation
-            if patterns and df['volume'].iloc[-1] > df['volume'].rolling(20).mean().iloc[-1] * 1.5:
-                result['Strength'] = len(patterns) * 2
+            breakout = detect_range_breakout(df, lookback=10, min_range_pct=3)
+            if breakout and result['Market_Structure'] == "Uptrend" and "Bullish" in breakout:
+                result['Patterns'].append(breakout)
+                result['Strength'] = 10  # Strong breakout signal
                 
         elif strategy == "Volume Profile Analysis":
-            # High volume nodes near current price
             current_price = df['close'].iloc[-1]
             nearby_nodes = volume_nodes[abs(volume_nodes['price_level'] - current_price) / current_price < 0.02]
             result['Strength'] = len(nearby_nodes) * 3
             
         elif strategy == "Market Structure Analysis":
-            # Strong trend with confirmation
             if result['Market_Structure'] in ['Uptrend', 'Downtrend']:
                 result['Strength'] = 5
                 
         elif strategy == "Multi-Factor Analysis":
-            # Combine all factors
             strength = 0
             strength += len(patterns) * 2  # Candlestick patterns
             strength += len(result['Volume_Nodes'])  # Volume nodes
-            strength += 5 if result['Market_Structure'] in ['Uptrend', 'Downtrend'] else 0  # Market structure
+            strength += 5 if result['Market_Structure'] in ['Uptrend', 'Downtrend'] else 0
+            breakout = detect_range_breakout(df, lookback=10, min_range_pct=3)
+            if breakout and "Bullish" in breakout and result['Market_Structure'] == "Uptrend":
+                strength += 7  # Extra weight for bullish breakout
+                result['Patterns'].append(breakout)
             result['Strength'] = strength
 
         return result if result['Strength'] > 0 else None
@@ -162,135 +190,26 @@ def analyze_stock_advanced(alice, token, strategy, exchange='NSE'):
         print(f"Error analyzing {token}: {e}")
         return None
 
-def analyze_all_tokens_advanced(alice, tokens, strategy, exchange='NSE'):
-    """Analyze all tokens using advanced strategies in parallel."""
-    results = []
-    with ThreadPoolExecutor(max_workers=50) as executor:
-        future_to_token = {
-            executor.submit(analyze_stock_advanced, alice, token, strategy, exchange): token
-            for token in tokens
-        }
-        for future in as_completed(future_to_token):
-            token = future_to_token[future]
-            try:
-                result = future.result()
-                if result:
-                    results.append(result)
-            except Exception as e:
-                print(f"Error processing {token}: {e}")
-    return results
 
-def analyze_price_movement(df, duration_days, target_percentage, direction='up'):
-    """
-    Analyze price movement over a specified duration.
-    
-    Args:
-        df: DataFrame with price data
-        duration_days: Number of days to look back
-        target_percentage: Target percentage change
-        direction: 'up' or 'down' for price movement direction
-    
-    Returns:
-        tuple: (percentage_change, met_criteria)
-    """
-    if len(df) < duration_days:
-        return 0, False
-    
-    # Get the price from duration_days ago and current price
-    start_price = df['close'].iloc[-duration_days]
-    current_price = df['close'].iloc[-1]
-    
-    # Calculate percentage change
-    percentage_change = ((current_price - start_price) / start_price) * 100
-    
-    # Check if criteria is met
-    if direction == 'up':
-        met_criteria = percentage_change >= target_percentage
-    else:  # down
-        met_criteria = percentage_change <= -target_percentage
-    
-    return percentage_change, met_criteria
 
-def analyze_stock_custom(alice, token, duration_days, target_percentage, direction='up', exchange='NSE'):
-    """
-    Analyze stock based on custom price movement criteria.
-    
-    Args:
-        alice: AliceBlue API instance
-        token: Stock token
-        duration_days: Number of days to look back
-        target_percentage: Target percentage change
-        direction: 'up' or 'down' for price movement direction
-        exchange: 'NSE' or 'BSE'
-    
-    Returns:
-        dict: Analysis results or None if criteria not met
-    """
-    try:
-        # Get more historical data than needed to ensure we have enough
-        lookback_days = max(duration_days * 2, 365)  # At least double the duration or 1 year
-        instrument, df = get_historical_data(
-            alice, token, 
-            datetime.now() - timedelta(days=lookback_days), 
-            datetime.now(), 
-            "D", 
-            exchange
-        )
-        
-        if len(df) < duration_days:
-            return None
 
-        # Calculate price movement
-        percentage_change, met_criteria = analyze_price_movement(
-            df, duration_days, target_percentage, direction
-        )
-        
-        if not met_criteria:
-            return None
 
-        # Additional analysis for context
-        volume_trend = df['volume'].iloc[-5:].mean() > df['volume'].iloc[-20:].mean()
-        volatility = df['close'].pct_change().std() * 100
-        
-        result = {
-            'Name': instrument.symbol,
-            'Close': df['close'].iloc[-1],
-            'Start_Price': df['close'].iloc[-duration_days],
-            'Percentage_Change': percentage_change,
-            'Volume_Trend': 'Increasing' if volume_trend else 'Decreasing',
-            'Volatility': volatility,
-            'Duration_Days': duration_days,
-            'Direction': direction.capitalize(),
-            'Strength': abs(percentage_change) / target_percentage  # Normalized strength
-        }
-        
-        return result
 
-    except Exception as e:
-        print(f"Error analyzing {token}: {e}")
-        return None
 
-def analyze_all_tokens_custom(alice, tokens, duration_days, target_percentage, direction='up', exchange='NSE'):
-    """Analyze all tokens using custom criteria in parallel."""
-    results = []
-    with ThreadPoolExecutor(max_workers=50) as executor:
-        future_to_token = {
-            executor.submit(
-                analyze_stock_custom, 
-                alice, 
-                token, 
-                duration_days, 
-                target_percentage, 
-                direction, 
-                exchange
-            ): token for token in tokens
-        }
-        for future in as_completed(future_to_token):
-            token = future_to_token[future]
-            try:
-                result = future.result()
-                if result:
-                    results.append(result)
-            except Exception as e:
-                print(f"Error processing {token}: {e}")
-    return results 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
