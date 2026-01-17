@@ -18,17 +18,6 @@ from stock_lists import STOCK_LISTS
 from utils import generate_tradingview_link
 import base64
 
-st.set_page_config(
-    page_title="Learning Lab",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': None,
-        'Report a bug': None,
-        'About': None
-    }
-)
 
 def load_image_base64(path):
     with open(path, "rb") as img:
