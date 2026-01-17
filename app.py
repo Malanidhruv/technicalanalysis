@@ -20,10 +20,22 @@ import base64
 
 st.markdown(
     f"""
-    <div style="padding: 6px 0;">
-        <img src="data:image/jpeg;base64,{logo_base64}" width="60">
+    <div style="
+        display:flex;
+        align-items:center;
+        gap:12px;
+        padding: 6px 0;
+    ">
+        <img src="data:image/jpeg;base64,{logo_base64}" width="55">
+        <span style="
+            font-size: 22px;
+            font-weight: 600;
+            color: #1f2937;
+        ">
+            Learning Lab
+        </span>
     </div>
-    <hr>
+    <hr style="margin-top:8px;">
     """,
     unsafe_allow_html=True
 )
