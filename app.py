@@ -18,40 +18,16 @@ from stock_lists import STOCK_LISTS
 from utils import generate_tradingview_link
 import base64
 
-st.set_page_config(
-    page_title="Stock Screener - Educational Platform",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': None,
-        'Report a bug': None,
-        'About': None
-    }
-)
-
-
-def load_image_base64(path):
-    with open(path, "rb") as img:
-        return base64.b64encode(img.read()).decode()
-
-logo_base64 = load_image_base64("assets/harion.jpg")
-
 st.markdown(
     f"""
-    <div style="display:flex; align-items:center; gap:14px;">
-        <img src="data:image/jpeg;base64,{logo_base64}" width="65">
-        <div>
-            <h1 style="margin-bottom:0;">Harion Research – Learning Lab</h1>
-            <p style="margin-top:0; color:#666;">
-                Learn Technical Analysis While Screening NSE & BSE Stocks
-            </p>
-        </div>
+    <div style="padding: 6px 0;">
+        <img src="data:image/jpeg;base64,{logo_base64}" width="60">
     </div>
     <hr>
     """,
     unsafe_allow_html=True
 )
+
 
 
 
