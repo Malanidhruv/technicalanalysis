@@ -19,16 +19,12 @@ from utils import generate_tradingview_link
 import base64
 
 st.set_page_config(
-    page_title="Learning Lab",
-    page_icon="assets/harion.jpg",   # ✅ Harion logo here
+    page_title=" ",          # 👈 this removes the visible heading
+    page_icon="assets/harion.jpg",
     layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': None,
-        'Report a bug': None,
-        'About': None
-    }
+    initial_sidebar_state="expanded"
 )
+
 
 
 
