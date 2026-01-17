@@ -16,17 +16,19 @@ from educational_scorer import (  # NEW: Import educational features
 )
 from stock_lists import STOCK_LISTS
 from utils import generate_tradingview_link
-import base64
 
+# Page Configuration
 st.set_page_config(
-    page_title=" ",          # 👈 this removes the visible heading
-    page_icon="assets/harion.jpg",
+    page_title="Learning Lab",
+    page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
 )
-
-
-
 
 # Set theme configuration using teal (#7FE2D3)
 st.markdown("""
@@ -117,7 +119,7 @@ def get_stock_lists_for_exchange(exchange):
 # Header
 st.markdown("""
     <div class="header">
-        <h1>📈 Learning Lab </h1>
+        <h1>📈 Stock Screener - Educational Platform</h1>
         <p>Learn Technical Analysis While Screening NSE & BSE Stocks</p>
     </div>
 """, unsafe_allow_html=True)
@@ -474,11 +476,15 @@ if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
                             badge_class = "strength-low"
                             badge_text = "WEAK"
                         
-                        col1, col2 = st.columns([3, 1])
+                        col1, col2, col3 = st.columns([2, 1, 1])
                         with col1:
                             st.markdown(f"**{i}. {stock['name']}** - ₹{stock['price']}")
                         with col2:
                             st.markdown(f'<span class="strength-badge {badge_class}">{strength}/100 - {badge_text}</span>', unsafe_allow_html=True)
+                        with col3:
+                            # Add TradingView chart link
+                            chart_link = generate_tradingview_link(stock['name'], st.session_state.selected_exchange)
+                            st.markdown(chart_link, unsafe_allow_html=True)
                         
                         st.markdown(f"📌 **Pattern:** {stock['pattern']}")
                         
