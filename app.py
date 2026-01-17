@@ -119,7 +119,7 @@ def get_stock_lists_for_exchange(exchange):
 # Header
 st.markdown("""
     <div class="header">
-        <h1>📈 Stock Screener - Educational Platform</h1>
+        <h1>📈 Learning Lab - Harion Research</h1>
         <p>Learn Technical Analysis While Screening NSE & BSE Stocks</p>
     </div>
 """, unsafe_allow_html=True)
