@@ -19,8 +19,8 @@ from utils import generate_tradingview_link
 import base64
 
 st.set_page_config(
-    page_title="Stock Screener - Educational Platform",
-    page_icon="📈",
+    page_title="Learning Lab",
+    page_icon="assets/harion.jpg",   # ✅ Harion logo here
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
@@ -29,6 +29,7 @@ st.set_page_config(
         'About': None
     }
 )
+
 
 
 # Set theme configuration using teal (#7FE2D3)
