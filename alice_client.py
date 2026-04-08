@@ -1,65 +1,60 @@
-import datetime
-from functools import lru_cache
 import pandas as pd
 import requests
 import streamlit as st
+from functools import lru_cache
 
 BASE_URL = "https://ant.aliceblueonline.com/open-api/od/v1"
 
 
-# 🔹 NEW: No credentials needed anymore
+# ✅ fake instrument to match your screener
+class Instrument:
+    def __init__(self, symbol):
+        self.symbol = symbol
+
+
 def initialize_alice():
-    """Initialize Alice client using session from Streamlit."""
     session = st.session_state.get("session")
 
     if not session:
-        raise Exception("Not logged in. Please login first.")
+        raise Exception("Login required")
 
     return Aliceblue(session)
 
 
 class Aliceblue:
     def __init__(self, session):
-        self.session = session
         self.headers = {
             "Authorization": f"Bearer {session}",
             "Content-Type": "application/json"
         }
 
-    # keep compatibility (your code expects this)
     def get_session_id(self):
         return True
 
-    # 🔹 Replace token → symbol logic
+    # ✅ IMPORTANT: returns object (not string)
     def get_instrument_by_token(self, exchange, token):
-        """
-        Your old code used token-based instruments.
-        For now, we assume token itself is usable symbol.
-        If not, we will fix mapping later.
-        """
-        return token
+        return Instrument(token)
 
-    # 🔹 MAIN FIX: historical data
+    # ✅ IMPORTANT: returns DataFrame (same as before)
     def get_historical(self, instrument, from_date, to_date, interval="D"):
 
         payload = {
-            "symbol": instrument,
-            "fromDate": str(from_date),
-            "toDate": str(to_date),
+            "symbol": instrument.symbol,
+            "fromDate": from_date.strftime("%Y-%m-%d"),
+            "toDate": to_date.strftime("%Y-%m-%d"),
             "interval": interval
         }
 
         url = f"{BASE_URL}/market/getHistoricalData"
 
-        response = requests.post(url, json=payload, headers=self.headers)
-        data = response.json()
+        res = requests.post(url, json=payload, headers=self.headers)
+        data = res.json()
 
         if data.get("stat") != "Ok":
-            raise Exception(f"API Error: {data}")
+            raise Exception(data)
 
         candles = data.get("data", [])
 
-        # Convert to DataFrame (IMPORTANT for your screener)
         df = pd.DataFrame(candles, columns=[
             "datetime", "open", "high", "low", "close", "volume"
         ])
@@ -68,6 +63,7 @@ class Aliceblue:
             return df
 
         df["datetime"] = pd.to_datetime(df["datetime"])
+
         df = df.astype({
             "open": float,
             "high": float,
@@ -79,17 +75,13 @@ class Aliceblue:
         return df
 
 
-# 🔹 KEEP YOUR CACHE FUNCTION (unchanged logic)
+# ✅ your cache (unchanged)
 @lru_cache(maxsize=1000)
 def get_cached_historical_data(alice, token, from_date, to_date, interval="D", exchange='NSE'):
-    """Cached version of historical data fetching."""
     instrument = alice.get_instrument_by_token(exchange, token)
-
     df = alice.get_historical(instrument, from_date, to_date, interval)
-
     return instrument, df
 
 
 def clear_cache():
-    """Clear the historical data cache."""
     get_cached_historical_data.cache_clear()
