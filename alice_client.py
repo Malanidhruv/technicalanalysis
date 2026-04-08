@@ -36,6 +36,9 @@ class Aliceblue:
         return Instrument(token)
 
     # ✅ IMPORTANT: returns DataFrame (same as before)
+
+
+        
     def get_historical(self, instrument, from_date, to_date, interval="D"):
 
         payload = {
@@ -44,26 +47,36 @@ class Aliceblue:
             "toDate": to_date.strftime("%Y-%m-%d"),
             "interval": interval
         }
-
+    
         url = f"{BASE_URL}/market/getHistoricalData"
-
+    
+        print("🔍 Fetching:", instrument.symbol)
+    
         res = requests.post(url, json=payload, headers=self.headers)
-        data = res.json()
-
+    
+        try:
+            data = res.json()
+        except:
+            raise Exception(f"Invalid response: {res.text}")
+    
+        print("📦 API Response:", data)
+    
         if data.get("stat") != "Ok":
-            raise Exception(data)
-
+            raise Exception(f"API Error for {instrument.symbol}: {data}")
+    
         candles = data.get("data", [])
-
+    
+        # 🚨 CRITICAL DEBUG
+        if not candles:
+            print(f"❌ No data for {instrument.symbol}")
+            return pd.DataFrame()
+    
         df = pd.DataFrame(candles, columns=[
             "datetime", "open", "high", "low", "close", "volume"
         ])
-
-        if df.empty:
-            return df
-
+    
         df["datetime"] = pd.to_datetime(df["datetime"])
-
+    
         df = df.astype({
             "open": float,
             "high": float,
@@ -71,8 +84,9 @@ class Aliceblue:
             "close": float,
             "volume": float
         })
-
+    
         return df
+
 
 
 # ✅ your cache (unchanged)
