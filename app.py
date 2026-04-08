@@ -4,7 +4,10 @@ import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import Pool, cpu_count
 from functools import partial
-from alice_client import initialize_alice, save_credentials, load_credentials
+from alice_client import initialize_alice
+from session_manager import generate_session
+from api_storage import save_session, get_session
+import webbrowser
 from advanced_analysis import (
     analyze_all_tokens_advanced,
     analyze_all_tokens_custom
@@ -16,6 +19,28 @@ from educational_scorer import (  # NEW: Import educational features
 )
 from stock_lists import STOCK_LISTS
 from utils import generate_tradingview_link
+
+# ===== NEW LOGIN HANDLER =====
+params = st.query_params
+
+if "authCode" in params and "userId" in params:
+    if "session" not in st.session_state:
+        session = generate_session(
+            params["authCode"],
+            params["userId"]
+        )
+        if session:
+            st.session_state["session"] = session
+            save_session(session)
+            st.success("Login successful")
+
+    st.query_params.clear()
+
+# Load saved session
+if "session" not in st.session_state:
+    stored_session = get_session()
+    if stored_session:
+        st.session_state["session"] = stored_session
 
 # Page Configuration
 st.set_page_config(
@@ -127,16 +152,13 @@ st.markdown("""
 # Sidebar
 with st.sidebar:
     st.markdown("### Authentication")
-    user_id, api_key = load_credentials()
+    if "session" not in st.session_state:
+        if st.button("🔐 Login to AliceBlue", use_container_width=True):
+            webbrowser.open("https://ant.aliceblueonline.com/?appcode=ZRmjdU2jDv")
+        st.warning("Please login to continue")
+    else:
+        st.success("Logged in")
 
-    if not user_id or not api_key:
-        st.markdown("Enter AliceBlue API Credentials")
-        new_user_id = st.text_input("User ID", type="password")
-        new_api_key = st.text_input("API Key", type="password")
-        if st.button("Login", use_container_width=True):
-            save_credentials(new_user_id, new_api_key)
-            st.success("Credentials saved!")
-            st.rerun()
     
     st.markdown("---")
     
