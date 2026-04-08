@@ -1,8 +1,8 @@
 import hashlib
 import requests
+import streamlit as st
 
-API_SECRET = "YOUR_SECRET"
-SESSION_FILE = "session.txt"
+API_SECRET = "W5X0oyuQJQLpvY68rRhugYSv4QypU9HjS2dgSFAkpkZMec1RW1ag4qiXUp5ipnTxt64wRlaJcaWOXarWWHsw9UmkXBKFoXeU4nUm"
 
 def generate_session(auth_code, user_id):
     raw = user_id + auth_code + API_SECRET
@@ -14,20 +14,7 @@ def generate_session(auth_code, user_id):
     data = res.json()
 
     if data["stat"] != "Ok":
-        raise Exception(data["emsg"])
-
-    save_session(data["userSession"])
-    return data["userSession"]
-
-
-def save_session(session):
-    with open(SESSION_FILE, "w") as f:
-        f.write(session)
-
-
-def load_session():
-    try:
-        with open(SESSION_FILE, "r") as f:
-            return f.read()
-    except:
+        st.error(data["emsg"])
         return None
+
+    return data["userSession"]
