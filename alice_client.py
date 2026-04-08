@@ -37,20 +37,25 @@ class Aliceblue:
 
     # ✅ IMPORTANT: returns DataFrame (same as before)
 
-
         
-    def get_historical(self, instrument, from_date, to_date, interval="D"):
 
+    def get_historical(self, instrument, from_date, to_date, interval="D", exchange="NSE"):
+
+        # Convert datetime → milliseconds
+        from_ts = int(from_date.timestamp() * 1000)
+        to_ts = int(to_date.timestamp() * 1000)
+    
         payload = {
-            "symbol": instrument.symbol,
-            "fromDate": from_date.strftime("%Y-%m-%d"),
-            "toDate": to_date.strftime("%Y-%m-%d"),
-            "interval": interval
+            "token": str(instrument.symbol),   # IMPORTANT → token, not symbol
+            "resolution": "1D" if interval == "D" else "1",
+            "from": str(from_ts),
+            "to": str(to_ts),
+            "exchange": exchange
         }
     
-        url = f"{BASE_URL}/market/getHistoricalData"
+        url = "https://ant.aliceblueonline.com/open-api/od/ChartAPIService/api/chart/history"
     
-        print("🔍 Fetching:", instrument.symbol)
+        print("🔍 Fetching TOKEN:", instrument.symbol)
     
         res = requests.post(url, json=payload, headers=self.headers)
     
@@ -62,20 +67,27 @@ class Aliceblue:
         print("📦 API Response:", data)
     
         if data.get("stat") != "Ok":
-            raise Exception(f"API Error for {instrument.symbol}: {data}")
+            raise Exception(f"API Error: {data}")
     
-        candles = data.get("data", [])
+        candles = data.get("result", [])
     
-        # 🚨 CRITICAL DEBUG
         if not candles:
-            print(f"❌ No data for {instrument.symbol}")
+            print(f"❌ No data for token {instrument.symbol}")
             return pd.DataFrame()
     
-        df = pd.DataFrame(candles, columns=[
-            "datetime", "open", "high", "low", "close", "volume"
-        ])
+        df = pd.DataFrame(candles)
     
-        df["datetime"] = pd.to_datetime(df["datetime"])
+        # Rename to match your system
+        df = df.rename(columns={
+            "time": "datetime",
+            "open": "open",
+            "high": "high",
+            "low": "low",
+            "close": "close",
+            "volume": "volume"
+        })
+    
+        df["datetime"] = pd.to_datetime(df["time"])
     
         df = df.astype({
             "open": float,
@@ -86,8 +98,6 @@ class Aliceblue:
         })
     
         return df
-
-
 
 # ✅ your cache (unchanged)
 @lru_cache(maxsize=1000)
