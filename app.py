@@ -225,8 +225,8 @@ st.markdown('</div>', unsafe_allow_html=True)
 try:
     alice = initialize_alice()
 except Exception as e:
-    st.error(f"Failed to initialize AliceBlue API: {e}")
-    alice = None
+    st.error(f"Login required: {e}")
+    st.stop()
 
 # Strategy selection based on tier
 col1, col2 = st.columns(2)
