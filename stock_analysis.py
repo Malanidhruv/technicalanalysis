@@ -371,14 +371,18 @@ def analyze_consolidation_breakout(df, instrument):
     Find stocks breaking out of tight consolidation.
 
     Criteria:
-    - Tight range for last 15 days (<8%)
-    - Low volume during consolidation
-    - Breakout with volume expansion (1.3x+)
-    - Price at or above consolidation high
+    - Tight range for last 15 days (<12%)
+    - Volume expansion on breakout (or price-range proxy if volume unavailable)
+    - Price at or near consolidation high
     """
     try:
         if len(df) < 50:
             return None
+
+        if "volume" not in df.columns:
+            df["volume"] = 0.0
+        else:
+            df["volume"] = df["volume"].fillna(0.0)
 
         current_price = df['close'].iloc[-1]
 
@@ -391,19 +395,30 @@ def analyze_consolidation_breakout(df, instrument):
             return None
 
         range_pct = ((high_in_period - low_in_period) / low_in_period) * 100
-        tight_range = range_pct < 8
+        tight_range = range_pct < 12
 
-        # Volume contraction during consolidation vs recent breakout candles
+        # Volume expansion during breakout (fallback to price-range proxy)
         vol_consolidation = consolidation_period['volume'].iloc[:-3].mean()
         vol_recent = df['volume'].iloc[-3:].mean()
+        has_volume = df['volume'].sum() > 0 and vol_consolidation > 0
 
-        if vol_consolidation == 0:
-            return None
-
-        volume_expanding = vol_recent > vol_consolidation * 1.3
+        if has_volume:
+            volume_ratio = vol_recent / vol_consolidation
+            volume_expanding = volume_ratio > 1.2
+        else:
+            avg_daily_range = (
+                (consolidation_period['high'] - consolidation_period['low'])
+                / consolidation_period['close']
+            ).mean() * 100
+            last_bar = df.iloc[-1]
+            last_range_pct = ((last_bar['high'] - last_bar['low']) / last_bar['close']) * 100
+            volume_ratio = last_range_pct / avg_daily_range if avg_daily_range > 0 else 1.0
+            volume_expanding = (
+                volume_ratio > 1.15 and last_bar['close'] >= last_bar['open']
+            )
 
         # Price breaking above consolidation high
-        breaking_high = current_price >= high_in_period * 0.995
+        breaking_high = current_price >= high_in_period * 0.99
 
         # Trend before consolidation
         pre_consolidation = df.iloc[-30:-15]
@@ -415,7 +430,7 @@ def analyze_consolidation_breakout(df, instrument):
         # RSI check
         df['RSI'] = calculate_rsi(df['close'])
         rsi = df['RSI'].iloc[-1]
-        rsi_ok = 45 <= rsi <= 75
+        rsi_ok = 40 <= rsi <= 80
 
         strength = 0
         if tight_range:
@@ -429,19 +444,21 @@ def analyze_consolidation_breakout(df, instrument):
         if rsi_ok:
             strength += 5
 
-        if strength >= 70:
+        # Require tight range + breakout; allow volume OR trend confirmation
+        if strength >= 55 and tight_range and breaking_high:
             return {
                 'Name': instrument.symbol,
                 'Close': round(current_price, 2),
                 'Strength': strength,
                 'Consolidation_Range': round(range_pct, 1),
                 'Consolidation_High': round(high_in_period, 2),
-                'Volume_Expansion': round(vol_recent / vol_consolidation, 1),
+                'Volume_Expansion': round(volume_ratio, 1),
                 'RSI': round(rsi, 1),
                 'Pattern': 'Consolidation Breakout',
                 'Educational_Note': (
                     f"Breaking {range_pct:.1f}% consolidation with "
-                    f"{(vol_recent / vol_consolidation):.1f}x volume. Potential explosive move."
+                    f"{volume_ratio:.1f}x {'volume' if has_volume else 'range'} expansion. "
+                    f"Potential explosive move."
                 )
             }
 

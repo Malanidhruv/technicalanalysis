@@ -3,11 +3,13 @@ import requests
 import streamlit as st
 import os
 
-# ✅ Load API secret from environment variable (never hardcode secrets)
-API_SECRET = os.environ.get(
-    "ALICEBLUE_API_SECRET",
-    "W5X0oyuQJQLpvY68rRhugYSv4QypU9HjS2dgSFAkpkZMec1RW1ag4qiXUp5ipnTxt64wRlaJcaWOXarWWHsw9UmkXBKFoXeU4nUm"
-)
+def _get_api_secret():
+    if secret := os.environ.get("ALICEBLUE_API_SECRET"):
+        return secret
+    try:
+        return st.secrets["aliceblue"]["api_secret"]
+    except Exception:
+        return None
 
 
 def generate_session(auth_code, user_id):
@@ -15,7 +17,12 @@ def generate_session(auth_code, user_id):
     Generate AliceBlue session from OAuth auth_code + user_id.
     Returns session token string on success, None on failure.
     """
-    raw = user_id + auth_code + API_SECRET
+    api_secret = _get_api_secret()
+    if not api_secret:
+        st.error("AliceBlue API secret not configured. Set ALICEBLUE_API_SECRET or add to .streamlit/secrets.toml.")
+        return None
+
+    raw = user_id + auth_code + api_secret
     checksum = hashlib.sha256(raw.encode()).hexdigest()
 
     url = "https://ant.aliceblueonline.com/open-api/od/v1/vendor/getUserDetails"

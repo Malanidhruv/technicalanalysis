@@ -8,11 +8,19 @@ from sklearn.preprocessing import MinMaxScaler
 
 def get_historical_data(alice, token, from_date, to_date, interval="D", exchange='NSE'):
     """Fetch historical data and return as a DataFrame."""
-    # Normalize exchange name for get_instrument_by_token
     exchange_name = 'BSE' if exchange == 'BSE' else 'NSE'
     instrument = alice.get_instrument_by_token(exchange_name, token)
     df = alice.get_historical(instrument, from_date, to_date, interval, exchange_name)
-    df = df.dropna()
+
+    if df is None or df.empty:
+        return instrument, df
+
+    if "volume" not in df.columns:
+        df["volume"] = 0.0
+    else:
+        df["volume"] = df["volume"].fillna(0.0)
+
+    df = df.dropna(subset=["open", "high", "low", "close"])
     return instrument, df
 
 
@@ -133,7 +141,7 @@ def analyze_volume_profile(df):
 
 
 def analyze_market_structure(df):
-    """Analyze market structure using higher highs and lower lows."""
+    """Analyze market structure using higher highs / higher lows (HH/HL vs LH/LL)."""
     if len(df) < 20:
         return "Undefined"
 
@@ -141,28 +149,40 @@ def analyze_market_structure(df):
     local_max_indices = argrelextrema(df['high'].values, np.greater_equal, order=window)[0]
     local_min_indices = argrelextrema(df['low'].values, np.less_equal, order=window)[0]
 
-    if len(local_max_indices) < 2 or len(local_min_indices) < 2:
-        return "Undefined"
+    if len(local_max_indices) >= 2 and len(local_min_indices) >= 2:
+        recent_max = df['high'].iloc[local_max_indices[-2:]]
+        recent_min = df['low'].iloc[local_min_indices[-2:]]
 
-    num_swings = min(3, len(local_max_indices), len(local_min_indices))
-    recent_max_indices = local_max_indices[-num_swings:]
-    recent_min_indices = local_min_indices[-num_swings:]
-
-    recent_max = df['high'].iloc[recent_max_indices]
-    recent_min = df['low'].iloc[recent_min_indices]
-
-    if len(recent_max) >= 2 and len(recent_min) >= 2:
         higher_highs = recent_max.iloc[-1] > recent_max.iloc[-2]
         higher_lows = recent_min.iloc[-1] > recent_min.iloc[-2]
 
         if higher_highs and higher_lows:
             return "Uptrend"
-        elif not higher_highs and not higher_lows:
+        if not higher_highs and not higher_lows:
             return "Downtrend"
-        else:
-            return "Sideways"
+        return "Sideways"
+
+    # Fallback when swing points are insufficient
+    if len(df) >= 50:
+        pct_change = (df['close'].iloc[-1] - df['close'].iloc[-50]) / df['close'].iloc[-50] * 100
+        if pct_change > 5:
+            return "Uptrend"
+        if pct_change < -5:
+            return "Downtrend"
+        return "Sideways"
 
     return "Undefined"
+
+
+def _score_market_structure(structure):
+    """Score market structure for screening strength."""
+    scores = {
+        "Uptrend": 8,
+        "Downtrend": 8,
+        "Sideways": 5,
+        "Undefined": 0,
+    }
+    return scores.get(structure, 0)
 
 
 def analyze_stock_advanced(alice, token, strategy, exchange='NSE'):
@@ -220,21 +240,19 @@ def analyze_stock_advanced(alice, token, strategy, exchange='NSE'):
                 result['Strength'] = 0
 
         elif strategy == "Market Structure Analysis":
-            strength = 0
-            if result['Market_Structure'] in ['Uptrend', 'Downtrend']:
-                strength += 5
-            if len(patterns) > 0:
-                strength += len(patterns)
+            strength = _score_market_structure(result['Market_Structure'])
+            strength += len(patterns) * 2
             result['Strength'] = strength
 
         elif strategy == "Multi-Factor Analysis":
             strength = 0
             strength += len(patterns) * 2
             strength += min(len(result['Volume_Nodes']), 5)
-            strength += 5 if result['Market_Structure'] in ['Uptrend', 'Downtrend'] else 0
+            strength += _score_market_structure(result['Market_Structure'])
             result['Strength'] = strength
 
-        return result if result['Strength'] > 0 else None
+        min_strength = 4 if strategy == "Market Structure Analysis" else 1
+        return result if result['Strength'] >= min_strength else None
 
     except Exception as e:
         print(f"Error analyzing token {token}: {e}")

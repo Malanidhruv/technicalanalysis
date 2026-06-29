@@ -97,8 +97,8 @@ class Aliceblue:
             col_lower = col.lower()
             if col_lower == "time":
                 rename_map[col] = "datetime"
-            elif col_lower in ("open", "high", "low", "close", "volume"):
-                rename_map[col] = col_lower
+            elif col_lower in ("open", "high", "low", "close", "volume", "vol", "v"):
+                rename_map[col] = "volume" if col_lower in ("volume", "vol", "v") else col_lower
 
         df = df.rename(columns=rename_map)
 
@@ -112,6 +112,11 @@ class Aliceblue:
         for col in ["open", "high", "low", "close", "volume"]:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        if "volume" not in df.columns:
+            df["volume"] = 0.0
+        else:
+            df["volume"] = df["volume"].fillna(0.0)
 
         df = df.dropna(subset=["close"])
         df = df.sort_values("datetime").reset_index(drop=True)

@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import datetime
@@ -18,9 +19,19 @@ from educational_scorer import (
 from stock_lists import STOCK_LISTS
 from utils import generate_tradingview_link
 
+
+def _get_app_key():
+    if key := os.environ.get("ALICEBLUE_APP_KEY"):
+        return key
+    try:
+        return st.secrets["aliceblue"]["app_key"]
+    except Exception:
+        return None
+
+
 # ===== PAGE CONFIG (must be first Streamlit call) =====
 st.set_page_config(
-    page_title="Learning Lab",
+    page_title="Harion Research Stock Screener",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -31,23 +42,39 @@ st.set_page_config(
     }
 )
 
+
+def _qp_get(params, name):
+    """Read a query param case-insensitively."""
+    for key in params:
+        if key.lower() == name.lower():
+            val = params[key]
+            return val[0] if isinstance(val, list) else val
+    return None
+
+
+def _complete_login(auth_code, user_id):
+    """Exchange AliceBlue auth code for a session and persist it."""
+    if not auth_code or not user_id:
+        st.error("Both authCode and userId are required.")
+        return False
+
+    session = generate_session(auth_code, user_id)
+    if session:
+        st.session_state["session"] = session
+        save_session(session)
+        st.query_params.clear()
+        st.rerun()
+    return bool(session)
+
+
 # ===== LOGIN HANDLER =====
 params = st.query_params
+auth_code = _qp_get(params, "authCode")
+user_id = _qp_get(params, "userId")
 
-if "authCode" in params and "userId" in params:
+if auth_code and user_id:
     if "session" not in st.session_state:
-        session = generate_session(
-            params["authCode"],
-            params["userId"]
-        )
-        if session:
-            st.session_state["session"] = session
-            save_session(session)
-            st.success("✅ Login successful!")
-            # Clear query params and rerun so page initializes with session
-            st.query_params.clear()
-            st.rerun()
-        else:
+        if not _complete_login(auth_code, user_id):
             st.error("❌ Login failed. Please try again.")
             st.query_params.clear()
     else:
@@ -133,7 +160,7 @@ def get_stock_lists_for_exchange(exchange):
 # ===== HEADER =====
 st.markdown("""
     <div class="header">
-        <h1>📈 Learning Lab - Harion Research</h1>
+        <h1>📈 Harion Research Stock Screener</h1>
         <p>Learn Technical Analysis While Screening NSE &amp; BSE Stocks</p>
     </div>
 """, unsafe_allow_html=True)
@@ -142,8 +169,35 @@ st.markdown("""
 with st.sidebar:
     st.markdown("### Authentication")
     if "session" not in st.session_state:
+        app_key = _get_app_key()
+        login_url = f"https://ant.aliceblueonline.com/?appcode={app_key}" if app_key else None
+
         if st.button("🔐 Login to AliceBlue", use_container_width=True):
-            webbrowser.open("https://ant.aliceblueonline.com/?appcode=ZRmjdU2jDv")
+            if not login_url:
+                st.error("AliceBlue app key not configured. Set ALICEBLUE_APP_KEY or add to .streamlit/secrets.toml.")
+            else:
+                webbrowser.open(login_url)
+
+        with st.expander("Localhost login (if redirect goes to wrong site)", expanded=True):
+            st.markdown(
+                "AliceBlue sends you back to the **Redirect URL** registered for your app key. "
+                "If that points to another Streamlit site (e.g. Learning Lab), use this instead:"
+            )
+            st.markdown(
+                "1. Click **Login to AliceBlue** above and sign in  \n"
+                "2. After login, copy `authCode` and `userId` from the browser address bar  \n"
+                "3. Paste them below and click **Connect**"
+            )
+            manual_auth = st.text_input("authCode", key="manual_auth_code")
+            manual_user = st.text_input("userId", key="manual_user_id")
+            if st.button("Connect", use_container_width=True):
+                _complete_login(manual_auth.strip(), manual_user.strip())
+
+            st.caption(
+                "Permanent fix: at [AliceBlue Developer Portal](https://a3.aliceblueonline.com/), "
+                "set your app's Redirect URL to `http://localhost:8501`"
+            )
+
         st.warning("Please login to continue")
         st.stop()  # Stop rendering until logged in
     else:
@@ -425,6 +479,8 @@ if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
         st.warning(f"No stocks found for {selected_list}.")
     else:
         with st.spinner("🔄 Analyzing stocks... This may take a moment."):
+            from alice_client import clear_cache
+            clear_cache()
             if strategy in [
                 "Strong Uptrend Scanner", "Pullback to Support", "Volume Breakout",
                 "Market Leaders", "Consolidation Breakout"
@@ -596,6 +652,11 @@ if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
             st.markdown("- A different strategy")
             st.markdown("- A different stock list")
             st.markdown("- A different exchange (NSE/BSE)")
+            st.info(
+                "Note: AliceBlue historical data is limited on weekdays during market hours "
+                "(typically available 5:30 PM–8:00 AM). If other strategies also return empty, "
+                "try again after market close."
+            )
 
 # ===== FOOTER =====
 st.markdown("---")
