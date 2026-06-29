@@ -1,4 +1,3 @@
-import os
 import streamlit as st
 import pandas as pd
 import datetime
@@ -17,16 +16,8 @@ from educational_scorer import (
     generate_daily_lesson
 )
 from stock_lists import STOCK_LISTS
+from credentials import get_app_key, credentials_configured
 from utils import generate_tradingview_link
-
-
-def _get_app_key():
-    if key := os.environ.get("ALICEBLUE_APP_KEY"):
-        return key
-    try:
-        return st.secrets["aliceblue"]["app_key"]
-    except Exception:
-        return None
 
 
 # ===== PAGE CONFIG (must be first Streamlit call) =====
@@ -169,8 +160,14 @@ st.markdown("""
 with st.sidebar:
     st.markdown("### Authentication")
     if "session" not in st.session_state:
-        app_key = _get_app_key()
+        app_key = get_app_key()
         login_url = f"https://ant.aliceblueonline.com/?appcode={app_key}" if app_key else None
+
+        if not credentials_configured():
+            st.error(
+                "AliceBlue credentials missing. Create `.streamlit/secrets.toml` locally "
+                "or add secrets in Streamlit Cloud (see `.streamlit/secrets.toml.example`)."
+            )
 
         if st.button("🔐 Login to AliceBlue", use_container_width=True):
             if not login_url:
