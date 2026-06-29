@@ -482,7 +482,7 @@ if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
                 "Strong Uptrend Scanner", "Pullback to Support", "Volume Breakout",
                 "Market Leaders", "Consolidation Breakout"
             ]:
-                screened_stocks = analyze_all_tokens(
+                screened_stocks, scan_stats = analyze_all_tokens(
                     alice, tokens, strategy,
                     exchange=st.session_state.selected_exchange
                 )
@@ -491,11 +491,13 @@ if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
                     alice, tokens, duration_days, target_percentage, direction,
                     exchange=st.session_state.selected_exchange
                 )
+                scan_stats = None
             else:
                 screened_stocks = analyze_all_tokens_advanced(
                     alice, tokens, strategy,
                     exchange=st.session_state.selected_exchange
                 )
+                scan_stats = None
 
         # Apply tier limits
         tier_limits = {"Free": 10, "Premium": 50, "Pro": None}
@@ -649,6 +651,26 @@ if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
             st.markdown("- A different strategy")
             st.markdown("- A different stock list")
             st.markdown("- A different exchange (NSE/BSE)")
+
+            if scan_stats:
+                st.markdown(
+                    f"**Scan summary:** {scan_stats['tokens']} symbols scanned, "
+                    f"{scan_stats['with_data']} returned price data, "
+                    f"{scan_stats['matched']} matched criteria, "
+                    f"{scan_stats['errors']} API errors."
+                )
+                if scan_stats["with_data"] == 0:
+                    st.error(
+                        "No historical data was returned. AliceBlue daily data is often "
+                        "unavailable during market hours (9:15 AM–3:30 PM IST). "
+                        "Try again after 5:30 PM IST or on weekends."
+                    )
+                elif scan_stats["with_data"] > 0 and scan_stats["matched"] == 0:
+                    st.info(
+                        "Price data loaded successfully, but no stocks met the strategy filters. "
+                        "Try a broader list like NIFTY 500 or ALL STOCKS."
+                    )
+
             st.info(
                 "Note: AliceBlue historical data is limited on weekdays during market hours "
                 "(typically available 5:30 PM–8:00 AM). If other strategies also return empty, "

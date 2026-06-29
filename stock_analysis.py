@@ -368,12 +368,12 @@ def analyze_market_leaders(df, instrument):
 
 def analyze_consolidation_breakout(df, instrument):
     """
-    Find stocks breaking out of tight consolidation.
+    Find stocks in tight consolidation or breaking out of one.
 
     Criteria:
-    - Tight range for last 15 days (<12%)
-    - Volume expansion on breakout (or price-range proxy if volume unavailable)
-    - Price at or near consolidation high
+    - Tight range for last 15 days (<15%)
+    - Price at or near consolidation high (breakout or setup)
+    - Volume/range expansion preferred but not required alone
     """
     try:
         if len(df) < 50:
@@ -386,25 +386,23 @@ def analyze_consolidation_breakout(df, instrument):
 
         current_price = df['close'].iloc[-1]
 
-        # Consolidation window
         consolidation_period = df.iloc[-15:]
         high_in_period = consolidation_period['high'].max()
         low_in_period = consolidation_period['low'].min()
 
-        if low_in_period == 0:
+        if low_in_period == 0 or high_in_period == 0:
             return None
 
         range_pct = ((high_in_period - low_in_period) / low_in_period) * 100
-        tight_range = range_pct < 12
+        tight_range = range_pct < 15
 
-        # Volume expansion during breakout (fallback to price-range proxy)
         vol_consolidation = consolidation_period['volume'].iloc[:-3].mean()
         vol_recent = df['volume'].iloc[-3:].mean()
         has_volume = df['volume'].sum() > 0 and vol_consolidation > 0
 
         if has_volume:
             volume_ratio = vol_recent / vol_consolidation
-            volume_expanding = volume_ratio > 1.2
+            volume_expanding = volume_ratio > 1.1
         else:
             avg_daily_range = (
                 (consolidation_period['high'] - consolidation_period['low'])
@@ -413,52 +411,54 @@ def analyze_consolidation_breakout(df, instrument):
             last_bar = df.iloc[-1]
             last_range_pct = ((last_bar['high'] - last_bar['low']) / last_bar['close']) * 100
             volume_ratio = last_range_pct / avg_daily_range if avg_daily_range > 0 else 1.0
-            volume_expanding = (
-                volume_ratio > 1.15 and last_bar['close'] >= last_bar['open']
-            )
+            volume_expanding = last_range_pct >= avg_daily_range * 0.9
 
-        # Price breaking above consolidation high
-        breaking_high = current_price >= high_in_period * 0.99
+        distance_from_high_pct = ((high_in_period - current_price) / high_in_period) * 100
+        at_high = distance_from_high_pct <= 1.5
+        near_high = distance_from_high_pct <= 6.0
 
-        # Trend before consolidation
         pre_consolidation = df.iloc[-30:-15]
         was_uptrending = (
             len(pre_consolidation) > 1 and
             pre_consolidation['close'].iloc[-1] > pre_consolidation['close'].iloc[0]
         )
 
-        # RSI check
         df['RSI'] = calculate_rsi(df['close'])
         rsi = df['RSI'].iloc[-1]
-        rsi_ok = 40 <= rsi <= 80
+        rsi_ok = 35 <= rsi <= 82
 
         strength = 0
         if tight_range:
-            strength += 30
-        if volume_expanding:
-            strength += 30
-        if breaking_high:
             strength += 25
+        if at_high:
+            strength += 35
+        elif near_high:
+            strength += 25
+        if volume_expanding:
+            strength += 20
         if was_uptrending:
             strength += 10
         if rsi_ok:
             strength += 5
 
-        # Require tight range + breakout; allow volume OR trend confirmation
-        if strength >= 55 and tight_range and breaking_high:
+        status = "Breakout" if at_high else "Near Breakout"
+
+        if tight_range and (at_high or near_high) and strength >= 40:
             return {
                 'Name': instrument.symbol,
                 'Close': round(current_price, 2),
                 'Strength': strength,
+                'Status': status,
                 'Consolidation_Range': round(range_pct, 1),
                 'Consolidation_High': round(high_in_period, 2),
+                'Distance_From_High': round(distance_from_high_pct, 1),
                 'Volume_Expansion': round(volume_ratio, 1),
                 'RSI': round(rsi, 1),
                 'Pattern': 'Consolidation Breakout',
                 'Educational_Note': (
-                    f"Breaking {range_pct:.1f}% consolidation with "
-                    f"{volume_ratio:.1f}x {'volume' if has_volume else 'range'} expansion. "
-                    f"Potential explosive move."
+                    f"{status}: {range_pct:.1f}% range, "
+                    f"{distance_from_high_pct:.1f}% below 15-day high. "
+                    f"{'Volume expanding' if volume_expanding else 'Watch for volume on breakout'}."
                 )
             }
 
@@ -580,7 +580,8 @@ def analyze_stock(alice, token, strategy, exchange='NSE'):
             exchange
         )
 
-        if df is None or len(df) < 100:
+        min_bars = 50 if strategy == "Consolidation Breakout" else 100
+        if df is None or len(df) < min_bars:
             return None
 
         # Calculate base indicators for all strategies
@@ -609,28 +610,77 @@ def analyze_stock(alice, token, strategy, exchange='NSE'):
         return None
 
 
+def _analyze_stock_meta(alice, token, strategy, exchange='NSE'):
+    """Return analysis result plus lightweight scan metadata."""
+    meta = {"has_data": False, "matched": False, "error": None}
+    try:
+        instrument, df = get_cached_historical_data(
+            alice, token,
+            datetime.now() - timedelta(days=365),
+            datetime.now(),
+            "D",
+            exchange
+        )
+        min_bars = 50 if strategy == "Consolidation Breakout" else 100
+        if df is None or len(df) < min_bars:
+            return None, meta
+
+        meta["has_data"] = True
+        df['50_EMA'] = calculate_ema(df['close'], 50)
+        df['200_EMA'] = calculate_ema(df['close'], 200)
+        df['RSI'] = calculate_rsi(df['close'])
+
+        strategy_map = {
+            "Strong Uptrend Scanner": analyze_strong_uptrend,
+            "Pullback to Support": analyze_pullback_entry,
+            "Volume Breakout": analyze_volume_breakout,
+            "Market Leaders": analyze_market_leaders,
+            "Consolidation Breakout": analyze_consolidation_breakout,
+            "EMA, RSI & Support Zone (Buy)": analyze_bullish,
+            "EMA, RSI & Resistance Zone (Sell)": analyze_bearish,
+        }
+        handler = strategy_map.get(strategy)
+        if not handler:
+            return None, meta
+
+        result = handler(df, instrument)
+        meta["matched"] = result is not None
+        return result, meta
+    except Exception as e:
+        meta["error"] = str(e)
+        print(f"Error analyzing token {token}: {e}")
+        return None, meta
+
+
 def analyze_stock_batch(alice, tokens, strategy, exchange='NSE', batch_size=50):
     """Analyze a batch of stocks in parallel."""
     results = []
+    stats = {"with_data": 0, "errors": 0}
     with ThreadPoolExecutor(max_workers=20) as executor:
         future_to_token = {
-            executor.submit(analyze_stock, alice, token, strategy, exchange): token
+            executor.submit(_analyze_stock_meta, alice, token, strategy, exchange): token
             for token in tokens[:batch_size]
         }
         for future in as_completed(future_to_token):
             token = future_to_token[future]
             try:
-                result = future.result()
+                result, meta = future.result()
+                if meta.get("has_data"):
+                    stats["with_data"] += 1
+                if meta.get("error"):
+                    stats["errors"] += 1
                 if result:
                     results.append(result)
             except Exception as e:
+                stats["errors"] += 1
                 print(f"Error processing token {token}: {e}")
-    return results
+    return results, stats
 
 
 def analyze_all_tokens(alice, tokens, strategy, exchange='NSE'):
     """Analyze all tokens with optimized batch processing."""
     results = []
+    stats = {"tokens": len(tokens), "with_data": 0, "errors": 0, "matched": 0}
     batch_size = 50
     total_batches = (len(tokens) + batch_size - 1) // batch_size
 
@@ -639,7 +689,13 @@ def analyze_all_tokens(alice, tokens, strategy, exchange='NSE'):
         end_idx = min((batch_num + 1) * batch_size, len(tokens))
         batch_tokens = tokens[start_idx:end_idx]
 
-        batch_results = analyze_stock_batch(alice, batch_tokens, strategy, exchange, batch_size)
+        batch_results, batch_stats = analyze_stock_batch(
+            alice, batch_tokens, strategy, exchange, batch_size
+        )
         results.extend(batch_results)
+        stats["with_data"] += batch_stats["with_data"]
+        stats["errors"] += batch_stats["errors"]
 
-    return results
+    stats["matched"] = len(results)
+    results.sort(key=lambda x: x.get("Strength", 0), reverse=True)
+    return results, stats
