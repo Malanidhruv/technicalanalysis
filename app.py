@@ -333,15 +333,40 @@ with tab_tech:
 
     with col1:
         available_lists = get_stock_lists_for_exchange(st.session_state.selected_exchange)
-        list_labels = {
-            f"{name} ({len(tokens)})": name for name, tokens in available_lists.items()
-        }
-        selected_label = st.selectbox(
-            "Select Stock List",
-            list(list_labels.keys()),
-            help="Choose a list of stocks to analyze"
+        list_options = list(available_lists.keys())
+        ms_key = f"tech_multiselect_{st.session_state.selected_exchange}"
+        if ms_key not in st.session_state:
+            st.session_state[ms_key] = [list_options[0]] if list_options else []
+        else:
+            # Drop stale names if exchange lists change
+            st.session_state[ms_key] = [
+                n for n in st.session_state[ms_key] if n in available_lists
+            ] or ([list_options[0]] if list_options else [])
+
+        selected_lists = st.multiselect(
+            "Stock lists (one or more)",
+            options=list_options,
+            key=ms_key,
+            help="Universe is the union of selected lists (duplicates removed).",
+            format_func=lambda n: f"{n} ({len(available_lists.get(n, []))})",
         )
-        selected_list = list_labels[selected_label]
+
+        # De-dupe tokens while preserving order
+        seen_tokens = set()
+        tokens = []
+        for name in selected_lists:
+            for t in available_lists.get(name, []):
+                key = str(t)
+                if key in seen_tokens:
+                    continue
+                seen_tokens.add(key)
+                tokens.append(t)
+        if selected_lists:
+            st.caption(
+                f"{', '.join(selected_lists)} → **{len(tokens)}** unique symbols"
+            )
+        else:
+            st.caption("Select at least one list to scan.")
 
     with col2:
         if st.session_state.user_tier == "Free":
@@ -542,14 +567,18 @@ with tab_tech:
             direction = st.selectbox("Direction", ["up", "down"], help="Price movement direction")
 
     # ===== SCREENING BUTTON =====
-    if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
-        tokens = available_lists.get(selected_list, [])
-
+    if st.button(
+        "🔍 Start Screening",
+        use_container_width=True,
+        type="primary",
+        disabled=not tokens,
+    ):
         if not tokens:
-            st.warning(f"No stocks found for {selected_list}.")
+            st.warning("Select at least one stock list.")
         else:
             with st.spinner(
-                f"🔄 Scanning {len(tokens)} stocks in parallel… "
+                f"🔄 Scanning {len(tokens)} stocks "
+                f"({', '.join(selected_lists)}) in parallel… "
                 "(reuses cached prices if you already scanned today)"
             ):
                 # Keep day cache — do NOT clear between strategies (big speed win)
