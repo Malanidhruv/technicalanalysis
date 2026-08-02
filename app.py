@@ -285,471 +285,481 @@ with st.sidebar:
         ⚠️ Educational tool only - not investment advice.
     """)
 
-# ===== EXCHANGE TOGGLE =====
-col1, col2 = st.columns(2)
-
-with col1:
-    btn_class = "nse-btn" if st.session_state.selected_exchange == 'NSE' else "default-btn"
-    st.markdown(f'<div class="button-box {btn_class}">', unsafe_allow_html=True)
-    if st.button("NSE", key="nse_btn", help="Switch to NSE stocks", use_container_width=True):
-        st.session_state.selected_exchange = 'NSE'
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col2:
-    btn_class = "bse-btn" if st.session_state.selected_exchange == 'BSE' else "default-btn"
-    st.markdown(f'<div class="button-box {btn_class}">', unsafe_allow_html=True)
-    if st.button("BSE", key="bse_btn", help="Switch to BSE stocks", use_container_width=True):
-        st.session_state.selected_exchange = 'BSE'
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ===== INITIALIZE ALICE =====
+# ===== INITIALIZE ALICE (shared by both tabs) =====
 try:
     alice = initialize_alice()
 except Exception as e:
     st.error(f"❌ Could not initialize AliceBlue: {e}")
     st.stop()
 
-# ===== STRATEGY SELECTION =====
-col1, col2 = st.columns(2)
+tab_tech, tab_swing = st.tabs([
+    "Technical Screener",
+    "Swing Setup (Technical + Fundamental)",
+])
 
-with col1:
-    available_lists = get_stock_lists_for_exchange(st.session_state.selected_exchange)
-    list_labels = {
-        f"{name} ({len(tokens)})": name for name, tokens in available_lists.items()
-    }
-    selected_label = st.selectbox(
-        "Select Stock List",
-        list(list_labels.keys()),
-        help="Choose a list of stocks to analyze"
-    )
-    selected_list = list_labels[selected_label]
+with tab_swing:
+    from swing_setup import render_swing_setup_tab
+    render_swing_setup_tab(alice)
 
-with col2:
-    if st.session_state.user_tier == "Free":
-        available_strategies = [
-            "Strong Uptrend Scanner",
-            "Price Action Breakout"
-        ]
-    elif st.session_state.user_tier == "Premium":
-        available_strategies = [
-            "Strong Uptrend Scanner",
-            "Pullback to Support",
-            "Volume Breakout",
-            "Price Action Breakout",
-            "Volume Profile Analysis"
-        ]
-    else:  # Pro
-        available_strategies = [
-            "Strong Uptrend Scanner",
-            "Pullback to Support",
-            "Volume Breakout",
-            "Market Leaders",
-            "Consolidation Breakout",
-            "Price Action Breakout",
-            "Volume Profile Analysis",
-            "Market Structure Analysis",
-            "Multi-Factor Analysis",
-            "Custom Price Movement"
-        ]
+with tab_tech:
+    # ===== EXCHANGE TOGGLE =====
+    col1, col2 = st.columns(2)
 
-    strategy = st.selectbox(
-        "Select Strategy",
-        available_strategies,
-        help="Choose a technical analysis strategy"
-    )
-
-# ===== STRATEGY DESCRIPTIONS =====
-strategy_descriptions = {
-    "Strong Uptrend Scanner": {
-        "description": """
-            📈 **Strong Uptrend Scanner**
-
-            Identifies stocks in powerful uptrends with all technical factors aligned.
-
-            **What it finds:**
-            - Price above all key EMAs (9, 21, 50, 200)
-            - Making higher highs and higher lows
-            - RSI showing bullish momentum (50-75)
-            - Volume supporting the uptrend
-
-            **Best for:** Trending markets, momentum trading
-            **Risk:** Uptrends can reverse suddenly - use stop-losses
-        """,
-        "learning": "Trend following is one of the most profitable strategies. This scanner finds the strongest uptrends where all timeframes agree."
-    },
-    "Pullback to Support": {
-        "description": """
-            🎯 **Pullback to Support Scanner**
-
-            Finds low-risk entries in strong stocks temporarily pulling back.
-
-            **What it finds:**
-            - Overall uptrend intact (above 200 EMA)
-            - Price pulled back to support level
-            - RSI oversold on pullback (30-45)
-            - Volume decreasing (healthy pullback)
-
-            **Best for:** Better risk-reward entries, swing trading
-            **Risk:** Support can break - confirm before entering
-        """,
-        "learning": "Best trades often come on pullbacks, not at highs. This scanner finds these low-risk entry points."
-    },
-    "Volume Breakout": {
-        "description": """
-            🚀 **Volume Breakout Scanner**
-
-            Catches stocks breaking out with institutional participation.
-
-            **What it finds:**
-            - Price breaking above resistance
-            - Volume 2x+ above average (institutional buying)
-            - MACD turning positive
-            - Not overextended (RSI < 80)
-
-            **Best for:** Explosive moves, catching new trends
-            **Risk:** False breakouts happen - wait for confirmation
-        """,
-        "learning": "Volume confirms everything. Without volume, breakouts often fail. This scanner finds volume-confirmed moves."
-    },
-    "Market Leaders": {
-        "description": """
-            👑 **Market Leaders Scanner**
-
-            Finds stocks showing exceptional relative strength.
-
-            **What it finds:**
-            - Near ~1-year highs (within ~15–20%)
-            - Positive 3-month performance
-            - Meaningful trend strength (ADX)
-            - Above 50 EMA with decent volume
-
-            **Best for:** Finding the strongest stocks, momentum trading
-            **Risk:** Leaders can become laggards - monitor closely
-        """,
-        "learning": "Market leaders often continue leading. These stocks have the strongest fundamentals and technicals."
-    },
-    "Consolidation Breakout": {
-        "description": """
-            💥 **Consolidation Breakout Scanner**
-
-            Spots tight ranges ready to explode with volume.
-
-            **What it finds:**
-            - Tight consolidation (< 8% range)
-            - Volume contraction during consolidation
-            - Breakout with volume expansion
-            - Above consolidation high
-
-            **Best for:** Catching explosive moves after compression
-            **Risk:** Direction uncertain - wait for confirmed breakout
-        """,
-        "learning": "Tight consolidation = energy building. When it breaks with volume, explosive moves often follow."
-    },
-    "Price Action Breakout": {
-        "description": """
-            🚀 **Bullish Price Action Breakout (Top 5)**
-
-            Shows only the **5 highest-confidence bullish** setups.
-
-            **Must have:**
-            - Not in a downtrend (no bearish engulfing)
-            - Breakout / near 20-day high **or** bullish candle pattern
-            - Volume confirmation preferred
-            - Strength score ≥ 55
-
-            **Best for:** Catching bullish breakouts with conviction
-        """,
-        "learning": "Fewer, higher-quality bullish breakouts beat a long list of weak signals."
-    },
-    "Volume Profile Analysis": {
-        "description": """
-            - Identifies high-volume price levels
-            - Analyzes volume distribution
-            - Detects institutional buying/selling
-            - Includes volume-weighted price levels
-        """,
-        "learning": "Volume profile shows where institutions are buying/selling."
-    },
-    "Market Structure Analysis": {
-        "description": """
-            - Analyzes market structure (HH/HL vs LH/LL)
-            - Identifies trend strength and direction
-            - Includes multiple timeframe analysis
-            - Considers market regime (trending vs ranging)
-        """,
-        "learning": "Market structure reveals the underlying trend and potential reversal points."
-    },
-    "Multi-Factor Analysis": {
-        "description": """
-            - Combines price action, volume, and market structure
-            - Includes relative strength analysis
-            - Considers sector rotation
-            - Integrates market breadth indicators
-        """,
-        "learning": "Multi-factor approach increases probability by requiring multiple confirmations."
-    },
-    "Custom Price Movement": {
-        "description": """
-            - Customizable price movement analysis
-            - Set your own duration and percentage targets
-            - Track stocks moving up or down by your specified amount
-            - Includes volume trend and volatility analysis
-        """,
-        "learning": "Custom filters let you find specific price movements based on your criteria."
-    }
-}
-
-if strategy in strategy_descriptions:
-    st.markdown("### Strategy Details")
-    st.markdown(strategy_descriptions[strategy]["description"])
-
-    if st.session_state.show_educational:
-        st.info(f"💡 **Learning Point:** {strategy_descriptions[strategy]['learning']}")
-
-# ===== CUSTOM PRICE MOVEMENT INPUTS =====
-if strategy == "Custom Price Movement":
-    col1, col2, col3 = st.columns(3)
     with col1:
-        duration_days = st.number_input(
-            "Duration (Days)", min_value=1, max_value=365, value=30,
-            help="Number of days to look back"
-        )
+        btn_class = "nse-btn" if st.session_state.selected_exchange == 'NSE' else "default-btn"
+        st.markdown(f'<div class="button-box {btn_class}">', unsafe_allow_html=True)
+        if st.button("NSE", key="nse_btn", help="Switch to NSE stocks", use_container_width=True):
+            st.session_state.selected_exchange = 'NSE'
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
     with col2:
-        target_percentage = st.number_input(
-            "Target Percentage", min_value=0.1, max_value=1000.0,
-            value=10.0, step=0.1, help="Target percentage change"
+        btn_class = "bse-btn" if st.session_state.selected_exchange == 'BSE' else "default-btn"
+        st.markdown(f'<div class="button-box {btn_class}">', unsafe_allow_html=True)
+        if st.button("BSE", key="bse_btn", help="Switch to BSE stocks", use_container_width=True):
+            st.session_state.selected_exchange = 'BSE'
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # ===== STRATEGY SELECTION =====
+    col1, col2 = st.columns(2)
+
+    with col1:
+        available_lists = get_stock_lists_for_exchange(st.session_state.selected_exchange)
+        list_labels = {
+            f"{name} ({len(tokens)})": name for name, tokens in available_lists.items()
+        }
+        selected_label = st.selectbox(
+            "Select Stock List",
+            list(list_labels.keys()),
+            help="Choose a list of stocks to analyze"
         )
-    with col3:
-        direction = st.selectbox("Direction", ["up", "down"], help="Price movement direction")
+        selected_list = list_labels[selected_label]
 
-# ===== SCREENING BUTTON =====
-if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
-    tokens = available_lists.get(selected_list, [])
+    with col2:
+        if st.session_state.user_tier == "Free":
+            available_strategies = [
+                "Strong Uptrend Scanner",
+                "Price Action Breakout"
+            ]
+        elif st.session_state.user_tier == "Premium":
+            available_strategies = [
+                "Strong Uptrend Scanner",
+                "Pullback to Support",
+                "Volume Breakout",
+                "Price Action Breakout",
+                "Volume Profile Analysis"
+            ]
+        else:  # Pro
+            available_strategies = [
+                "Strong Uptrend Scanner",
+                "Pullback to Support",
+                "Volume Breakout",
+                "Market Leaders",
+                "Consolidation Breakout",
+                "Price Action Breakout",
+                "Volume Profile Analysis",
+                "Market Structure Analysis",
+                "Multi-Factor Analysis",
+                "Custom Price Movement"
+            ]
 
-    if not tokens:
-        st.warning(f"No stocks found for {selected_list}.")
-    else:
-        with st.spinner(
-            f"🔄 Scanning {len(tokens)} stocks in parallel… "
-            "(reuses cached prices if you already scanned today)"
-        ):
-            # Keep day cache — do NOT clear between strategies (big speed win)
-            if strategy in [
-                "Strong Uptrend Scanner", "Pullback to Support", "Volume Breakout",
-                "Market Leaders", "Consolidation Breakout"
-            ]:
-                screened_stocks, scan_stats = analyze_all_tokens(
-                    alice, tokens, strategy,
-                    exchange=st.session_state.selected_exchange
-                )
-            elif strategy == "Custom Price Movement":
-                screened_stocks = analyze_all_tokens_custom(
-                    alice, tokens, duration_days, target_percentage, direction,
-                    exchange=st.session_state.selected_exchange
-                )
-                scan_stats = None
-            else:
-                screened_stocks = analyze_all_tokens_advanced(
-                    alice, tokens, strategy,
-                    exchange=st.session_state.selected_exchange
-                )
-                scan_stats = None
+        strategy = st.selectbox(
+            "Select Strategy",
+            available_strategies,
+            help="Choose a technical analysis strategy"
+        )
 
-        # Apply tier limits (Price Action Breakout already capped at top 5 bullish)
-        if strategy == "Price Action Breakout":
-            result_limit = 5
+    # ===== STRATEGY DESCRIPTIONS =====
+    strategy_descriptions = {
+        "Strong Uptrend Scanner": {
+            "description": """
+                📈 **Strong Uptrend Scanner**
+
+                Identifies stocks in powerful uptrends with all technical factors aligned.
+
+                **What it finds:**
+                - Price above all key EMAs (9, 21, 50, 200)
+                - Making higher highs and higher lows
+                - RSI showing bullish momentum (50-75)
+                - Volume supporting the uptrend
+
+                **Best for:** Trending markets, momentum trading
+                **Risk:** Uptrends can reverse suddenly - use stop-losses
+            """,
+            "learning": "Trend following is one of the most profitable strategies. This scanner finds the strongest uptrends where all timeframes agree."
+        },
+        "Pullback to Support": {
+            "description": """
+                🎯 **Pullback to Support Scanner**
+
+                Finds low-risk entries in strong stocks temporarily pulling back.
+
+                **What it finds:**
+                - Overall uptrend intact (above 200 EMA)
+                - Price pulled back to support level
+                - RSI oversold on pullback (30-45)
+                - Volume decreasing (healthy pullback)
+
+                **Best for:** Better risk-reward entries, swing trading
+                **Risk:** Support can break - confirm before entering
+            """,
+            "learning": "Best trades often come on pullbacks, not at highs. This scanner finds these low-risk entry points."
+        },
+        "Volume Breakout": {
+            "description": """
+                🚀 **Volume Breakout Scanner**
+
+                Catches stocks breaking out with institutional participation.
+
+                **What it finds:**
+                - Price breaking above resistance
+                - Volume 2x+ above average (institutional buying)
+                - MACD turning positive
+                - Not overextended (RSI < 80)
+
+                **Best for:** Explosive moves, catching new trends
+                **Risk:** False breakouts happen - wait for confirmation
+            """,
+            "learning": "Volume confirms everything. Without volume, breakouts often fail. This scanner finds volume-confirmed moves."
+        },
+        "Market Leaders": {
+            "description": """
+                👑 **Market Leaders Scanner**
+
+                Finds stocks showing exceptional relative strength.
+
+                **What it finds:**
+                - Near ~1-year highs (within ~15–20%)
+                - Positive 3-month performance
+                - Meaningful trend strength (ADX)
+                - Above 50 EMA with decent volume
+
+                **Best for:** Finding the strongest stocks, momentum trading
+                **Risk:** Leaders can become laggards - monitor closely
+            """,
+            "learning": "Market leaders often continue leading. These stocks have the strongest fundamentals and technicals."
+        },
+        "Consolidation Breakout": {
+            "description": """
+                💥 **Consolidation Breakout Scanner**
+
+                Spots tight ranges ready to explode with volume.
+
+                **What it finds:**
+                - Tight consolidation (< 8% range)
+                - Volume contraction during consolidation
+                - Breakout with volume expansion
+                - Above consolidation high
+
+                **Best for:** Catching explosive moves after compression
+                **Risk:** Direction uncertain - wait for confirmed breakout
+            """,
+            "learning": "Tight consolidation = energy building. When it breaks with volume, explosive moves often follow."
+        },
+        "Price Action Breakout": {
+            "description": """
+                🚀 **Bullish Price Action Breakout (Top 5)**
+
+                Shows only the **5 highest-confidence bullish** setups.
+
+                **Must have:**
+                - Not in a downtrend (no bearish engulfing)
+                - Breakout / near 20-day high **or** bullish candle pattern
+                - Volume confirmation preferred
+                - Strength score ≥ 55
+
+                **Best for:** Catching bullish breakouts with conviction
+            """,
+            "learning": "Fewer, higher-quality bullish breakouts beat a long list of weak signals."
+        },
+        "Volume Profile Analysis": {
+            "description": """
+                - Identifies high-volume price levels
+                - Analyzes volume distribution
+                - Detects institutional buying/selling
+                - Includes volume-weighted price levels
+            """,
+            "learning": "Volume profile shows where institutions are buying/selling."
+        },
+        "Market Structure Analysis": {
+            "description": """
+                - Analyzes market structure (HH/HL vs LH/LL)
+                - Identifies trend strength and direction
+                - Includes multiple timeframe analysis
+                - Considers market regime (trending vs ranging)
+            """,
+            "learning": "Market structure reveals the underlying trend and potential reversal points."
+        },
+        "Multi-Factor Analysis": {
+            "description": """
+                - Combines price action, volume, and market structure
+                - Includes relative strength analysis
+                - Considers sector rotation
+                - Integrates market breadth indicators
+            """,
+            "learning": "Multi-factor approach increases probability by requiring multiple confirmations."
+        },
+        "Custom Price Movement": {
+            "description": """
+                - Customizable price movement analysis
+                - Set your own duration and percentage targets
+                - Track stocks moving up or down by your specified amount
+                - Includes volume trend and volatility analysis
+            """,
+            "learning": "Custom filters let you find specific price movements based on your criteria."
+        }
+    }
+
+    if strategy in strategy_descriptions:
+        st.markdown("### Strategy Details")
+        st.markdown(strategy_descriptions[strategy]["description"])
+
+        if st.session_state.show_educational:
+            st.info(f"💡 **Learning Point:** {strategy_descriptions[strategy]['learning']}")
+
+    # ===== CUSTOM PRICE MOVEMENT INPUTS =====
+    if strategy == "Custom Price Movement":
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            duration_days = st.number_input(
+                "Duration (Days)", min_value=1, max_value=365, value=30,
+                help="Number of days to look back"
+            )
+        with col2:
+            target_percentage = st.number_input(
+                "Target Percentage", min_value=0.1, max_value=1000.0,
+                value=10.0, step=0.1, help="Target percentage change"
+            )
+        with col3:
+            direction = st.selectbox("Direction", ["up", "down"], help="Price movement direction")
+
+    # ===== SCREENING BUTTON =====
+    if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
+        tokens = available_lists.get(selected_list, [])
+
+        if not tokens:
+            st.warning(f"No stocks found for {selected_list}.")
         else:
-            tier_limits = {"Free": 10, "Premium": 50, "Pro": None}
-            result_limit = tier_limits[st.session_state.user_tier]
+            with st.spinner(
+                f"🔄 Scanning {len(tokens)} stocks in parallel… "
+                "(reuses cached prices if you already scanned today)"
+            ):
+                # Keep day cache — do NOT clear between strategies (big speed win)
+                if strategy in [
+                    "Strong Uptrend Scanner", "Pullback to Support", "Volume Breakout",
+                    "Market Leaders", "Consolidation Breakout"
+                ]:
+                    screened_stocks, scan_stats = analyze_all_tokens(
+                        alice, tokens, strategy,
+                        exchange=st.session_state.selected_exchange
+                    )
+                elif strategy == "Custom Price Movement":
+                    screened_stocks = analyze_all_tokens_custom(
+                        alice, tokens, duration_days, target_percentage, direction,
+                        exchange=st.session_state.selected_exchange
+                    )
+                    scan_stats = None
+                else:
+                    screened_stocks = analyze_all_tokens_advanced(
+                        alice, tokens, strategy,
+                        exchange=st.session_state.selected_exchange
+                    )
+                    scan_stats = None
 
-        total_found = len(screened_stocks)
-        if result_limit and total_found > result_limit:
-            if strategy != "Price Action Breakout":
-                st.warning(
-                    f"⚠️ Found {total_found} stocks, but {st.session_state.user_tier} tier "
-                    f"shows top {result_limit}. Upgrade for full access!"
-                )
-            screened_stocks = screened_stocks[:result_limit]
-
-        if screened_stocks:
+            # Apply tier limits (Price Action Breakout already capped at top 5 bullish)
             if strategy == "Price Action Breakout":
-                st.success(
-                    f"✅ Top {len(screened_stocks)} **bullish** breakout picks "
-                    f"(highest confidence)"
-                )
+                result_limit = 5
             else:
-                st.success(f"✅ Found {len(screened_stocks)} stocks matching **{strategy}**")
+                tier_limits = {"Free": 10, "Premium": 50, "Pro": None}
+                result_limit = tier_limits[st.session_state.user_tier]
 
-            # === EDUCATIONAL COMPARISON (Premium/Pro only) ===
-            if st.session_state.show_educational and st.session_state.user_tier in ["Premium", "Pro"]:
-                with st.expander("📊 Educational Analysis - Why These Stocks Qualified", expanded=True):
-                    comparison = compare_stocks_educational(screened_stocks)
-
-                    st.markdown("### 🏆 Top Picks Ranked by Technical Strength")
-
-                    for i, stock in enumerate(comparison[:min(10, len(comparison))], 1):
-                        strength = stock['strength']
-                        if strength >= 75:
-                            badge_class, badge_text = "strength-high", "STRONG"
-                        elif strength >= 50:
-                            badge_class, badge_text = "strength-medium", "MODERATE"
-                        else:
-                            badge_class, badge_text = "strength-low", "WEAK"
-
-                        col1, col2, col3 = st.columns([2, 1, 1])
-                        with col1:
-                            st.markdown(f"**{i}. {stock['name']}** - ₹{stock['price']}")
-                        with col2:
-                            st.markdown(
-                                f'<span class="strength-badge {badge_class}">'
-                                f'{strength}/100 - {badge_text}</span>',
-                                unsafe_allow_html=True
-                            )
-                        with col3:
-                            chart_link = generate_tradingview_link(
-                                stock['name'], st.session_state.selected_exchange
-                            )
-                            st.markdown(chart_link, unsafe_allow_html=True)
-
-                        st.markdown(f"📌 **Pattern:** {stock['pattern']}")
-
-                        if stock['why_strong']:
-                            st.markdown(f"✓ **Why Strong:** {', '.join(stock['why_strong'])}")
-
-                        if stock.get('educational_note'):
-                            st.markdown(
-                                f'<div class="edu-note">💡 <strong>Learning:</strong> '
-                                f'{stock["educational_note"]}</div>',
-                                unsafe_allow_html=True
-                            )
-
-                        st.markdown("---")
-
-            # === DAILY LESSON (Premium/Pro only) ===
-            if st.session_state.show_educational and st.session_state.user_tier in ["Premium", "Pro"]:
-                with st.expander("🎓 Today's Technical Analysis Lesson"):
-                    lesson = generate_daily_lesson(screened_stocks[:5], strategy)
-
-                    st.markdown(f"## {lesson['title']}")
-                    st.markdown(f"*{lesson['date']}*")
-
-                    st.markdown("### 📚 Strategy Explanation")
-                    st.markdown(lesson['strategy_explanation'])
-
-                    st.markdown("### 🎯 Key Learnings")
-                    for learning in lesson['key_learnings']:
-                        st.markdown(f"- ✓ {learning}")
-
-                    if lesson['examples']:
-                        st.markdown("### 📊 Real Examples from Today's Scan")
-                        for example in lesson['examples']:
-                            st.markdown(f"**{example['stock']}**: {example['why_qualified']}")
-                            if example['what_to_watch']:
-                                st.markdown(f"  - 👀 **Watch:** {example['what_to_watch']}")
-
-                    st.markdown("### ❓ Quiz Questions (Test Your Understanding)")
-                    for q in lesson['quiz_questions']:
-                        st.markdown(f"- {q['question']}")
-
-            # === RESULTS TABLE ===
-            st.markdown("### 📋 Screening Results")
-
-            df_results = pd.DataFrame(screened_stocks)
-
-            # Format numeric columns safely
-            for col in ["Close", "Start_Price", "Percentage_Change", "Volatility"]:
-                if col in df_results.columns:
-                    df_results[col] = pd.to_numeric(df_results[col], errors="coerce").round(2)
-
-            if "Strength" in df_results.columns:
-                df_results["Strength"] = pd.to_numeric(
-                    df_results["Strength"], errors="coerce"
-                ).fillna(0).astype(int)
-
-            if "Volume" in df_results.columns:
-                df_results["Volume"] = pd.to_numeric(df_results["Volume"], errors="coerce")
-
-            if "Patterns" in df_results.columns:
-                df_results["Patterns"] = df_results["Patterns"].apply(
-                    lambda x: ", ".join(x) if isinstance(x, list) else str(x)
-                )
-
-            if "Volume_Nodes" in df_results.columns:
-                df_results["Volume_Nodes"] = df_results["Volume_Nodes"].apply(
-                    lambda x: ", ".join(map(str, x[:3])) if isinstance(x, list) and x else "None"
-                )
-
-            # Sort by Strength
-            if "Strength" in df_results.columns:
-                df_results = df_results.sort_values(by="Strength", ascending=False)
-
-            # Add TradingView links
-            if "Name" in df_results.columns:
-                df_results["Name"] = df_results["Name"].apply(
-                    lambda x: generate_tradingview_link(x, st.session_state.selected_exchange)
-                )
-
-            # Remove Educational_Note column from main table
-            if "Educational_Note" in df_results.columns:
-                df_results = df_results.drop(columns=["Educational_Note"])
-
-            st.markdown(df_results.to_html(escape=False, index=False), unsafe_allow_html=True)
-
-            # Download button
-            csv = df_results.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Results as CSV",
-                data=csv,
-                file_name=(
-                    f"{strategy.replace(' ', '_')}_"
-                    f"{st.session_state.selected_exchange}_"
-                    f"{datetime.datetime.now().strftime('%Y%m%d')}.csv"
-                ),
-                mime="text/csv",
-                use_container_width=True
-            )
-
-            if st.session_state.user_tier == "Free":
-                st.info("🎓 **Upgrade to Premium** to unlock educational features, daily lessons, and see more results!")
-
-        else:
-            st.warning(f"No stocks found matching **{strategy}** criteria. Try:")
-            st.markdown("- A different strategy")
-            st.markdown("- A different stock list")
-            st.markdown("- A different exchange (NSE/BSE)")
-
-            if scan_stats:
-                st.markdown(
-                    f"**Scan summary:** {scan_stats['tokens']} symbols scanned, "
-                    f"{scan_stats['with_data']} returned price data, "
-                    f"{scan_stats.get('no_data', 0)} had no data, "
-                    f"{scan_stats['matched']} matched criteria, "
-                    f"{scan_stats['errors']} API errors."
-                )
-                if scan_stats["errors"] > 0 and scan_stats["errors"] == scan_stats["tokens"]:
-                    st.error(
-                        "All API calls failed — log out and log in again with a fresh authCode. "
-                        "If the problem persists, try after 5:30 PM IST when historical data is available."
+            total_found = len(screened_stocks)
+            if result_limit and total_found > result_limit:
+                if strategy != "Price Action Breakout":
+                    st.warning(
+                        f"⚠️ Found {total_found} stocks, but {st.session_state.user_tier} tier "
+                        f"shows top {result_limit}. Upgrade for full access!"
                     )
-                elif scan_stats["with_data"] == 0 and scan_stats.get("no_data", 0) > 0:
-                    st.error(
-                        "No historical data was returned. AliceBlue daily data is often "
-                        "unavailable during market hours (9:15 AM–3:30 PM IST). "
-                        "Try again after 5:30 PM IST or on weekends."
+                screened_stocks = screened_stocks[:result_limit]
+
+            if screened_stocks:
+                if strategy == "Price Action Breakout":
+                    st.success(
+                        f"✅ Top {len(screened_stocks)} **bullish** breakout picks "
+                        f"(highest confidence)"
                     )
-                elif scan_stats["with_data"] > 0 and scan_stats["matched"] == 0:
-                    st.info(
-                        "Price data loaded successfully, but no stocks met the strategy filters. "
-                        "Try a broader list like NIFTY 500 or ALL STOCKS."
+                else:
+                    st.success(f"✅ Found {len(screened_stocks)} stocks matching **{strategy}**")
+
+                # === EDUCATIONAL COMPARISON (Premium/Pro only) ===
+                if st.session_state.show_educational and st.session_state.user_tier in ["Premium", "Pro"]:
+                    with st.expander("📊 Educational Analysis - Why These Stocks Qualified", expanded=True):
+                        comparison = compare_stocks_educational(screened_stocks)
+
+                        st.markdown("### 🏆 Top Picks Ranked by Technical Strength")
+
+                        for i, stock in enumerate(comparison[:min(10, len(comparison))], 1):
+                            strength = stock['strength']
+                            if strength >= 75:
+                                badge_class, badge_text = "strength-high", "STRONG"
+                            elif strength >= 50:
+                                badge_class, badge_text = "strength-medium", "MODERATE"
+                            else:
+                                badge_class, badge_text = "strength-low", "WEAK"
+
+                            col1, col2, col3 = st.columns([2, 1, 1])
+                            with col1:
+                                st.markdown(f"**{i}. {stock['name']}** - ₹{stock['price']}")
+                            with col2:
+                                st.markdown(
+                                    f'<span class="strength-badge {badge_class}">'
+                                    f'{strength}/100 - {badge_text}</span>',
+                                    unsafe_allow_html=True
+                                )
+                            with col3:
+                                chart_link = generate_tradingview_link(
+                                    stock['name'], st.session_state.selected_exchange
+                                )
+                                st.markdown(chart_link, unsafe_allow_html=True)
+
+                            st.markdown(f"📌 **Pattern:** {stock['pattern']}")
+
+                            if stock['why_strong']:
+                                st.markdown(f"✓ **Why Strong:** {', '.join(stock['why_strong'])}")
+
+                            if stock.get('educational_note'):
+                                st.markdown(
+                                    f'<div class="edu-note">💡 <strong>Learning:</strong> '
+                                    f'{stock["educational_note"]}</div>',
+                                    unsafe_allow_html=True
+                                )
+
+                            st.markdown("---")
+
+                # === DAILY LESSON (Premium/Pro only) ===
+                if st.session_state.show_educational and st.session_state.user_tier in ["Premium", "Pro"]:
+                    with st.expander("🎓 Today's Technical Analysis Lesson"):
+                        lesson = generate_daily_lesson(screened_stocks[:5], strategy)
+
+                        st.markdown(f"## {lesson['title']}")
+                        st.markdown(f"*{lesson['date']}*")
+
+                        st.markdown("### 📚 Strategy Explanation")
+                        st.markdown(lesson['strategy_explanation'])
+
+                        st.markdown("### 🎯 Key Learnings")
+                        for learning in lesson['key_learnings']:
+                            st.markdown(f"- ✓ {learning}")
+
+                        if lesson['examples']:
+                            st.markdown("### 📊 Real Examples from Today's Scan")
+                            for example in lesson['examples']:
+                                st.markdown(f"**{example['stock']}**: {example['why_qualified']}")
+                                if example['what_to_watch']:
+                                    st.markdown(f"  - 👀 **Watch:** {example['what_to_watch']}")
+
+                        st.markdown("### ❓ Quiz Questions (Test Your Understanding)")
+                        for q in lesson['quiz_questions']:
+                            st.markdown(f"- {q['question']}")
+
+                # === RESULTS TABLE ===
+                st.markdown("### 📋 Screening Results")
+
+                df_results = pd.DataFrame(screened_stocks)
+
+                # Format numeric columns safely
+                for col in ["Close", "Start_Price", "Percentage_Change", "Volatility"]:
+                    if col in df_results.columns:
+                        df_results[col] = pd.to_numeric(df_results[col], errors="coerce").round(2)
+
+                if "Strength" in df_results.columns:
+                    df_results["Strength"] = pd.to_numeric(
+                        df_results["Strength"], errors="coerce"
+                    ).fillna(0).astype(int)
+
+                if "Volume" in df_results.columns:
+                    df_results["Volume"] = pd.to_numeric(df_results["Volume"], errors="coerce")
+
+                if "Patterns" in df_results.columns:
+                    df_results["Patterns"] = df_results["Patterns"].apply(
+                        lambda x: ", ".join(x) if isinstance(x, list) else str(x)
                     )
 
-            st.info(
-                "Note: AliceBlue historical data is limited on weekdays during market hours "
-                "(typically available 5:30 PM–8:00 AM). If other strategies also return empty, "
-                "try again after market close."
-            )
+                if "Volume_Nodes" in df_results.columns:
+                    df_results["Volume_Nodes"] = df_results["Volume_Nodes"].apply(
+                        lambda x: ", ".join(map(str, x[:3])) if isinstance(x, list) and x else "None"
+                    )
+
+                # Sort by Strength
+                if "Strength" in df_results.columns:
+                    df_results = df_results.sort_values(by="Strength", ascending=False)
+
+                # Add TradingView links
+                if "Name" in df_results.columns:
+                    df_results["Name"] = df_results["Name"].apply(
+                        lambda x: generate_tradingview_link(x, st.session_state.selected_exchange)
+                    )
+
+                # Remove Educational_Note column from main table
+                if "Educational_Note" in df_results.columns:
+                    df_results = df_results.drop(columns=["Educational_Note"])
+
+                st.markdown(df_results.to_html(escape=False, index=False), unsafe_allow_html=True)
+
+                # Download button
+                csv = df_results.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Results as CSV",
+                    data=csv,
+                    file_name=(
+                        f"{strategy.replace(' ', '_')}_"
+                        f"{st.session_state.selected_exchange}_"
+                        f"{datetime.datetime.now().strftime('%Y%m%d')}.csv"
+                    ),
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
+                if st.session_state.user_tier == "Free":
+                    st.info("🎓 **Upgrade to Premium** to unlock educational features, daily lessons, and see more results!")
+
+            else:
+                st.warning(f"No stocks found matching **{strategy}** criteria. Try:")
+                st.markdown("- A different strategy")
+                st.markdown("- A different stock list")
+                st.markdown("- A different exchange (NSE/BSE)")
+
+                if scan_stats:
+                    st.markdown(
+                        f"**Scan summary:** {scan_stats['tokens']} symbols scanned, "
+                        f"{scan_stats['with_data']} returned price data, "
+                        f"{scan_stats.get('no_data', 0)} had no data, "
+                        f"{scan_stats['matched']} matched criteria, "
+                        f"{scan_stats['errors']} API errors."
+                    )
+                    if scan_stats["errors"] > 0 and scan_stats["errors"] == scan_stats["tokens"]:
+                        st.error(
+                            "All API calls failed — log out and log in again with a fresh authCode. "
+                            "If the problem persists, try after 5:30 PM IST when historical data is available."
+                        )
+                    elif scan_stats["with_data"] == 0 and scan_stats.get("no_data", 0) > 0:
+                        st.error(
+                            "No historical data was returned. AliceBlue daily data is often "
+                            "unavailable during market hours (9:15 AM–3:30 PM IST). "
+                            "Try again after 5:30 PM IST or on weekends."
+                        )
+                    elif scan_stats["with_data"] > 0 and scan_stats["matched"] == 0:
+                        st.info(
+                            "Price data loaded successfully, but no stocks met the strategy filters. "
+                            "Try a broader list like NIFTY 500 or ALL STOCKS."
+                        )
+
+                st.info(
+                    "Note: AliceBlue historical data is limited on weekdays during market hours "
+                    "(typically available 5:30 PM–8:00 AM). If other strategies also return empty, "
+                    "try again after market close."
+                )
 
 # ===== FOOTER =====
 st.markdown("---")

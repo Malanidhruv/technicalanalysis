@@ -5,3 +5,8 @@ __pycache__/
 .env
 .venv/
 venv/
+data/
+BSE_backup_before_update.csv
+NSE_backup_before_update.csv
+BSE_updated.csv
+NSE_updated.csv
