@@ -274,8 +274,17 @@ def scan_symbol_for_breakout(alice, token, symbol, exchange, conn,
         if result is None:
             return None
 
-        breakout_date = df.index[-1].date().isoformat() if hasattr(df.index[-1], 'date') \
-            else datetime.now().date().isoformat()
+        if 'datetime' in df.columns:
+            last_dt = df['datetime'].iloc[-1]
+            breakout_date = pd.Timestamp(last_dt).date().isoformat()
+        elif hasattr(df.index[-1], 'date'):
+            breakout_date = df.index[-1].date().isoformat()
+        else:
+            # last resort - no date info available at all, fall back to today
+            # (this should be rare; log so it's visible if it starts happening often)
+            print(f"WARNING: no 'datetime' column or DatetimeIndex for {symbol} - "
+                  f"breakout_date defaulting to today, 'days since breakout' will be wrong")
+            breakout_date = datetime.now().date().isoformat()
         breakout_volume = float(df['volume'].iloc[-1]) if 'volume' in df.columns else None
 
         added = add_candidate(
