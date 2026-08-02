@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
-from fundamental_score import CompanyFundamentals
+from fundamental_score import CompanyFundamentals, fundamental_score
 
 
 def _bs4():
@@ -479,3 +479,14 @@ def fetch_fundamentals_many(
             if progress_cb:
                 progress_cb(i, n, sym, "error")
     return out
+
+
+def get_cached_fundamental_score(symbol: str) -> Tuple[Optional[float], Optional[Dict]]:
+    """Cache-only lookup for Breakout Watch - never scrapes.
+
+    Returns (score, breakdown) or (None, None) on a cache miss.
+    """
+    cf = _cache_get(symbol)
+    if cf is None:
+        return None, None
+    return fundamental_score(cf)

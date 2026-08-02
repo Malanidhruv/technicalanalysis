@@ -292,9 +292,10 @@ except Exception as e:
     st.error(f"❌ Could not initialize AliceBlue: {e}")
     st.stop()
 
-tab_tech, tab_swing = st.tabs([
+tab_tech, tab_swing, tab_breakout = st.tabs([
     "Technical Screener",
     "Swing Setup (Technical + Fundamental)",
+    "Breakout Watch",
 ])
 
 with tab_swing:
@@ -307,6 +308,13 @@ with tab_swing:
             "Ensure `beautifulsoup4` is in requirements.txt, then "
             "Manage app → Reboot so Streamlit Cloud reinstalls packages."
         )
+
+with tab_breakout:
+    try:
+        from breakout_watch import render_breakout_watch_tab
+        render_breakout_watch_tab(alice)
+    except ImportError as exc:
+        st.error(f"Breakout Watch dependencies missing: {exc}")
 
 with tab_tech:
     # ===== EXCHANGE TOGGLE =====
