@@ -13,7 +13,8 @@ import streamlit as st
 
 from alice_client import get_cached_historical_data
 from breakout_scanner import scan_universe_for_breakouts
-from fundamentals_fetcher import get_cached_fundamental_score
+from fundamental_score import fundamental_score
+from fundamentals_fetcher import _cache_get
 from retest_scanner import scan_watchlist_for_retests
 from swing_setup import _universe
 from symbol_lookup import token_to_symbol
@@ -23,6 +24,18 @@ from watchlist_store import (
     get_connection,
     import_from_csv,
 )
+
+
+def get_cached_fundamental_score(symbol):
+    """Cache-only lookup for Breakout Watch - never scrapes.
+
+    Defined here (not only in fundamentals_fetcher) so a stale Cloud
+    mount of fundamentals_fetcher.py can't break this tab's import.
+    """
+    cf = _cache_get(symbol)
+    if cf is None:
+        return None, None
+    return fundamental_score(cf)
 
 _UNIVERSE_LISTS = ["NIFTY 500", "BSE 500"]
 
