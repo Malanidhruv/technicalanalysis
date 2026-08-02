@@ -1,5 +1,5 @@
 """
-Swing Setup tab: technical scan (Nifty500 + BSE500) → fundamentals → top 2 watchlist.
+Swing Setup tab: technical + fundamental watchlist from user-selected stock lists.
 
 Strictly additive — reuses existing analyzers; does not modify their logic.
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 import pandas as pd
 import streamlit as st
@@ -21,32 +21,54 @@ from stock_analysis import analyze_stock
 from stock_lists import STOCK_LISTS
 from symbol_lookup import token_to_symbol
 
+# List name → exchange (matches existing STOCK_LISTS naming)
+_NSE_LISTS = {
+    "NIFTY FNO", "NIFTY 50", "NIFTY 200", "NIFTY 500", "ALL STOCKS",
+}
+_BSE_LISTS = {
+    "BSE 500", "BSE Large Cap Index", "BSE Mid Cap Index",
+    "BSE Small Cap Index", "BSE 400 MidSmallCap",
+    "BSE 250 LargeMidCap", "BSE ALL STOCKS",
+}
+_DEFAULT_LISTS = ["NIFTY 500", "BSE 500"]
 
-def _universe() -> List[Tuple[Any, str]]:
-    """(token, exchange) pairs for Nifty 500 + BSE 500, de-duped by symbol (NSE wins)."""
+
+def _exchange_for_list(list_name: str) -> str:
+    if list_name in _BSE_LISTS or list_name.startswith("BSE"):
+        return "BSE"
+    return "NSE"
+
+
+def _universe(selected_lists: Sequence[str]) -> List[Tuple[Any, str]]:
+    """(token, exchange) for selected lists, de-duped by symbol (NSE wins if both)."""
+    # Process NSE lists first so they win on symbol collisions
+    ordered = sorted(
+        selected_lists,
+        key=lambda n: 0 if _exchange_for_list(n) == "NSE" else 1,
+    )
     seen = set()
     out: List[Tuple[Any, str]] = []
-    for token in STOCK_LISTS.get("NIFTY 500", []):
-        sym = str(token_to_symbol(token, "NSE")).upper()
-        if sym in seen:
-            continue
-        seen.add(sym)
-        out.append((token, "NSE"))
-    for token in STOCK_LISTS.get("BSE 500", []):
-        sym = str(token_to_symbol(token, "BSE")).upper()
-        if sym in seen:
-            continue
-        seen.add(sym)
-        out.append((token, "BSE"))
+    for list_name in ordered:
+        exchange = _exchange_for_list(list_name)
+        for token in STOCK_LISTS.get(list_name, []):
+            sym = str(token_to_symbol(token, exchange)).upper()
+            if not sym or sym in seen:
+                continue
+            seen.add(sym)
+            out.append((token, exchange))
     return out
 
 
-def _run_technical_scan(alice, max_candidates: int = 10) -> List[Dict[str, Any]]:
+def _run_technical_scan(
+    alice,
+    selected_lists: Sequence[str],
+    max_candidates: int = 10,
+) -> List[Dict[str, Any]]:
     """
     Reuse existing per-stock analyzers (no strategy edits).
     Prefer Price Action Breakout; fall back to Consolidation Breakout per symbol.
     """
-    universe = _universe()
+    universe = _universe(selected_lists)
     results: List[Dict[str, Any]] = []
     workers = min(DEFAULT_WORKERS, 16)
 
@@ -164,18 +186,52 @@ def _render_pick_card(pick: Dict[str, Any], rank: int) -> None:
 def render_swing_setup_tab(alice) -> None:
     st.markdown("### Swing Setup (Technical + Fundamental)")
     st.markdown(
-        "Scans **Nifty 500 + BSE 500** with existing **Price Action Breakout** "
-        "(fallback: **Consolidation Breakout**), scores fundamentals from Screener.in "
-        "(24h disk cache, 2s delay when uncached), and returns **2 manual swing picks**."
+        "Pick one or more stock lists, scan with existing **Price Action Breakout** "
+        "(fallback: **Consolidation Breakout**), score fundamentals via Screener.in "
+        "(24h cache), and get **2 manual swing picks**."
     )
 
-    if st.button("🔍 Run Swing Setup", key="swing_setup_run", type="primary", use_container_width=True):
+    # Keep STOCK_LISTS order; only known NSE/BSE groups
+    available = [name for name in STOCK_LISTS if name in (_NSE_LISTS | _BSE_LISTS)]
+    default = [n for n in _DEFAULT_LISTS if n in available] or available[:1]
+
+    selected_lists = st.multiselect(
+        "Stock lists (select one or more)",
+        options=available,
+        default=default,
+        key="swing_setup_lists",
+        help="Universe is the union of selected lists. Duplicate symbols keep the NSE token.",
+        format_func=lambda n: f"{n} ({len(STOCK_LISTS.get(n, []))})",
+    )
+
+    universe_size = len(_universe(selected_lists)) if selected_lists else 0
+    if selected_lists:
+        st.caption(
+            f"Selected: {', '.join(selected_lists)} → "
+            f"**{universe_size}** unique symbols after de-dupe."
+        )
+    else:
+        st.warning("Select at least one stock list to run Swing Setup.")
+
+    if st.button(
+        "🔍 Run Swing Setup",
+        key="swing_setup_run",
+        type="primary",
+        use_container_width=True,
+        disabled=not selected_lists,
+    ):
         progress = st.progress(0, text="Starting technical scan…")
         status = st.empty()
+        st.session_state["swing_setup_selected_lists"] = list(selected_lists)
 
         try:
-            status.info("Step 1/3 — Technical scan across Nifty 500 + BSE 500…")
-            candidates = _run_technical_scan(alice, max_candidates=10)
+            status.info(
+                f"Step 1/3 — Technical scan across {universe_size} symbols "
+                f"({', '.join(selected_lists)})…"
+            )
+            candidates = _run_technical_scan(
+                alice, selected_lists, max_candidates=10
+            )
             progress.progress(35, text=f"Technical: {len(candidates)} candidates")
             st.session_state["swing_setup_candidates"] = candidates
 
@@ -183,7 +239,7 @@ def render_swing_setup_tab(alice) -> None:
                 progress.progress(100, text="Done")
                 st.warning(
                     "No technical candidates found. Try after market hours when "
-                    "AliceBlue history is available."
+                    "AliceBlue history is available, or pick a broader list."
                 )
                 return
 
@@ -208,12 +264,18 @@ def render_swing_setup_tab(alice) -> None:
             picks, dropped = build_watchlist(
                 candidates, fundamentals, price_lookup, top_n=2
             )
-            watch = {"picks": picks, "dropped": dropped}
+            watch = {
+                "picks": picks,
+                "dropped": dropped,
+                "lists": list(selected_lists),
+                "universe_size": universe_size,
+            }
             st.session_state["swing_setup_watchlist"] = watch
             progress.progress(100, text="Done")
             status.success(
                 f"Watchlist ready — {len(picks)} picks "
-                f"({len(dropped)} dropped / {len(candidates)} technical)."
+                f"({len(dropped)} dropped / {len(candidates)} technical) "
+                f"from {', '.join(selected_lists)}."
             )
         except Exception as exc:
             st.error(f"Swing Setup failed: {exc}")
@@ -222,8 +284,12 @@ def render_swing_setup_tab(alice) -> None:
 
     watch = st.session_state.get("swing_setup_watchlist")
     if not watch:
-        st.info("Click **Run Swing Setup** to generate today's 2 manual swing ideas.")
+        st.info("Select list(s), then click **Run Swing Setup**.")
         return
+
+    used = watch.get("lists") or st.session_state.get("swing_setup_selected_lists")
+    if used:
+        st.caption(f"Last run lists: {', '.join(used)}")
 
     picks = watch.get("picks") or []
     if picks:
