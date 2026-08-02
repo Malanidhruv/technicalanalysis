@@ -242,7 +242,9 @@ with st.sidebar:
             st.warning("Session outdated — please log out and log in again.")
         if st.button("🚪 Logout", use_container_width=True):
             from api_storage import clear_session
+            from alice_client import clear_cache
             clear_session()
+            clear_cache()
             del st.session_state["session"]
             if "user_id" in st.session_state:
                 del st.session_state["user_id"]
@@ -525,9 +527,11 @@ if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
     if not tokens:
         st.warning(f"No stocks found for {selected_list}.")
     else:
-        with st.spinner("🔄 Analyzing stocks... This may take a moment."):
-            from alice_client import clear_cache
-            clear_cache()
+        with st.spinner(
+            f"🔄 Scanning {len(tokens)} stocks in parallel… "
+            "(reuses cached prices if you already scanned today)"
+        ):
+            # Keep day cache — do NOT clear between strategies (big speed win)
             if strategy in [
                 "Strong Uptrend Scanner", "Pullback to Support", "Volume Breakout",
                 "Market Leaders", "Consolidation Breakout"

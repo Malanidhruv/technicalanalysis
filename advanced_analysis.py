@@ -7,10 +7,13 @@ from sklearn.preprocessing import MinMaxScaler
 
 
 def get_historical_data(alice, token, from_date, to_date, interval="D", exchange='NSE'):
-    """Fetch historical data and return as a DataFrame."""
+    """Fetch historical data via shared cache (same path as core strategies)."""
+    from alice_client import get_cached_historical_data
+
     exchange_name = 'BSE' if exchange == 'BSE' else 'NSE'
-    instrument = alice.get_instrument_by_token(exchange_name, token)
-    df = alice.get_historical(instrument, from_date, to_date, interval, exchange_name)
+    instrument, df = get_cached_historical_data(
+        alice, token, from_date, to_date, interval, exchange_name
+    )
 
     if df is None or df.empty:
         return instrument, df
@@ -291,20 +294,27 @@ def analyze_stock_advanced(alice, token, strategy, exchange='NSE'):
 
         patterns = identify_candlestick_patterns(df)
         result['Patterns'] = patterns
-
         result['Market_Structure'] = analyze_market_structure(df)
 
-        volume_nodes = analyze_volume_profile(df)
-        result['Volume_Nodes'] = volume_nodes['price_level'].tolist() if len(volume_nodes) > 0 else []
+        # Skip heavy volume-profile work unless the strategy needs it
+        needs_volume_profile = strategy in (
+            "Volume Profile Analysis", "Multi-Factor Analysis"
+        )
+        volume_nodes = analyze_volume_profile(df) if needs_volume_profile else pd.DataFrame()
+        result['Volume_Nodes'] = (
+            volume_nodes['price_level'].tolist() if len(volume_nodes) > 0 else []
+        )
 
         if strategy == "Price Action Breakout":
             return _score_bullish_breakout(df, result, patterns)
 
-        elif strategy == "Volume Profile Analysis":
+        if strategy == "Volume Profile Analysis":
             current_price = df['close'].iloc[-1]
             if len(volume_nodes) > 0:
                 volume_nodes_copy = volume_nodes.copy()
-                volume_nodes_copy['distance'] = abs(volume_nodes_copy['price_level'] - current_price) / current_price
+                volume_nodes_copy['distance'] = abs(
+                    volume_nodes_copy['price_level'] - current_price
+                ) / current_price
                 nearby_nodes = volume_nodes_copy[volume_nodes_copy['distance'] < 0.02]
                 result['Strength'] = len(nearby_nodes) * 3
             else:
@@ -330,25 +340,26 @@ def analyze_stock_advanced(alice, token, strategy, exchange='NSE'):
         return None
 
 
-def analyze_all_tokens_advanced(alice, tokens, strategy, exchange='NSE'):
-    """Analyze all tokens using advanced strategies in parallel."""
+def analyze_all_tokens_advanced(alice, tokens, strategy, exchange='NSE', max_workers=16):
+    """Analyze all tokens using advanced strategies in one parallel pool."""
+    from alice_client import DEFAULT_WORKERS
+
+    workers = max_workers or DEFAULT_WORKERS
     results = []
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        future_to_token = {
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
             executor.submit(analyze_stock_advanced, alice, token, strategy, exchange): token
             for token in tokens
         }
-        for future in as_completed(future_to_token):
-            token = future_to_token[future]
+        for future in as_completed(futures):
             try:
                 result = future.result()
                 if result:
                     results.append(result)
             except Exception as e:
-                print(f"Error processing token {token}: {e}")
+                print(f"Error processing token: {e}")
 
     results.sort(key=lambda x: x.get("Strength", 0), reverse=True)
-    # Price Action Breakout: only the highest-confidence bullish names
     if strategy == "Price Action Breakout":
         return results[:5]
     return results

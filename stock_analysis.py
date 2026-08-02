@@ -652,17 +652,25 @@ def _analyze_stock_meta(alice, token, strategy, exchange='NSE'):
         return None, meta
 
 
-def analyze_stock_batch(alice, tokens, strategy, exchange='NSE', batch_size=50):
-    """Analyze a batch of stocks in parallel."""
+def analyze_all_tokens(alice, tokens, strategy, exchange='NSE', max_workers=16):
+    """
+    Scan all tokens in one parallel pool.
+
+    Speed/quality tradeoff: 16 workers is usually fast enough without
+    hammering AliceBlue into rate-limit errors. Raise only if scans stay clean.
+    """
+    from alice_client import DEFAULT_WORKERS
+
+    workers = max_workers or DEFAULT_WORKERS
     results = []
-    stats = {"with_data": 0, "errors": 0, "no_data": 0}
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        future_to_token = {
+    stats = {"tokens": len(tokens), "with_data": 0, "errors": 0, "no_data": 0, "matched": 0}
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
             executor.submit(_analyze_stock_meta, alice, token, strategy, exchange): token
-            for token in tokens[:batch_size]
+            for token in tokens
         }
-        for future in as_completed(future_to_token):
-            token = future_to_token[future]
+        for future in as_completed(futures):
             try:
                 result, meta = future.result()
                 if meta.get("has_data"):
@@ -675,29 +683,7 @@ def analyze_stock_batch(alice, tokens, strategy, exchange='NSE', batch_size=50):
                     results.append(result)
             except Exception as e:
                 stats["errors"] += 1
-                print(f"Error processing token {token}: {e}")
-    return results, stats
-
-
-def analyze_all_tokens(alice, tokens, strategy, exchange='NSE'):
-    """Analyze all tokens with optimized batch processing."""
-    results = []
-    stats = {"tokens": len(tokens), "with_data": 0, "errors": 0, "no_data": 0, "matched": 0}
-    batch_size = 50
-    total_batches = (len(tokens) + batch_size - 1) // batch_size
-
-    for batch_num in range(total_batches):
-        start_idx = batch_num * batch_size
-        end_idx = min((batch_num + 1) * batch_size, len(tokens))
-        batch_tokens = tokens[start_idx:end_idx]
-
-        batch_results, batch_stats = analyze_stock_batch(
-            alice, batch_tokens, strategy, exchange, batch_size
-        )
-        results.extend(batch_results)
-        stats["with_data"] += batch_stats["with_data"]
-        stats["errors"] += batch_stats["errors"]
-        stats["no_data"] += batch_stats.get("no_data", 0)
+                print(f"Error processing token: {e}")
 
     stats["matched"] = len(results)
     results.sort(key=lambda x: x.get("Strength", 0), reverse=True)
