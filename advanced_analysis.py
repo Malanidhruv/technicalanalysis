@@ -185,6 +185,86 @@ def _score_market_structure(structure):
     return scores.get(structure, 0)
 
 
+BULLISH_PATTERNS = {"Hammer", "Bullish Engulfing", "Morning Star"}
+BEARISH_PATTERNS = {"Bearish Engulfing"}
+
+
+def _score_bullish_breakout(df, result, patterns):
+    """
+    Bullish-only price action breakout score (0-100).
+    Rejects downtrends and bearish candle patterns.
+    """
+    structure = result.get("Market_Structure", "Undefined")
+    if structure == "Downtrend":
+        return None
+    if any(p in BEARISH_PATTERNS for p in patterns):
+        return None
+
+    bullish_patterns = [p for p in patterns if p in BULLISH_PATTERNS]
+    close = df["close"].iloc[-1]
+    high_20 = df["high"].iloc[-20:].max()
+    near_breakout = close >= high_20 * 0.98
+    broke_out = close >= high_20
+
+    avg_volume = df["volume"].rolling(20).mean().iloc[-1]
+    current_volume = df["volume"].iloc[-1]
+    vol_ratio = (
+        current_volume / avg_volume
+        if pd.notna(avg_volume) and avg_volume > 0
+        else 0
+    )
+    volume_surge = vol_ratio >= 1.5
+
+    green_candle = close > df["open"].iloc[-1]
+    gain_pct = ((close - df["open"].iloc[-1]) / df["open"].iloc[-1]) * 100 if df["open"].iloc[-1] else 0
+
+    # Need a real bullish setup, not just a Doji on a quiet day
+    if not (bullish_patterns or broke_out or (near_breakout and volume_surge and green_candle)):
+        return None
+    if structure == "Sideways" and not bullish_patterns and not volume_surge:
+        return None
+
+    strength = 0
+    if structure == "Uptrend":
+        strength += 30
+    elif structure == "Sideways":
+        strength += 10
+
+    if broke_out:
+        strength += 25
+    elif near_breakout:
+        strength += 15
+
+    if volume_surge:
+        strength += 25
+    elif vol_ratio >= 1.2:
+        strength += 12
+
+    if "Morning Star" in bullish_patterns:
+        strength += 20
+    elif "Bullish Engulfing" in bullish_patterns:
+        strength += 15
+    elif "Hammer" in bullish_patterns:
+        strength += 10
+
+    if green_candle and gain_pct >= 1:
+        strength += 10
+    elif green_candle:
+        strength += 5
+
+    # Keep only higher-confidence names
+    if strength < 55:
+        return None
+
+    result["Patterns"] = bullish_patterns or patterns
+    result["Pattern"] = ", ".join(result["Patterns"]) if result["Patterns"] else "Bullish Breakout Setup"
+    result["Volume_Ratio"] = round(vol_ratio, 2)
+    result["Breakout"] = "Confirmed" if broke_out else ("Near High" if near_breakout else "Setup")
+    result["Strength"] = min(strength, 100)
+    result["Bias"] = "Bullish"
+    return result
+
+
 def analyze_stock_advanced(alice, token, strategy, exchange='NSE'):
     """Analyze stock using advanced strategies."""
     try:
@@ -218,16 +298,7 @@ def analyze_stock_advanced(alice, token, strategy, exchange='NSE'):
         result['Volume_Nodes'] = volume_nodes['price_level'].tolist() if len(volume_nodes) > 0 else []
 
         if strategy == "Price Action Breakout":
-            avg_volume = df['volume'].rolling(20).mean().iloc[-1]
-            current_volume = df['volume'].iloc[-1]
-
-            strength = 0
-            if len(patterns) > 0:
-                strength += len(patterns) * 2
-            if pd.notna(avg_volume) and avg_volume > 0 and current_volume > avg_volume * 1.5:
-                strength += 3
-
-            result['Strength'] = strength
+            return _score_bullish_breakout(df, result, patterns)
 
         elif strategy == "Volume Profile Analysis":
             current_price = df['close'].iloc[-1]
@@ -262,7 +333,7 @@ def analyze_stock_advanced(alice, token, strategy, exchange='NSE'):
 def analyze_all_tokens_advanced(alice, tokens, strategy, exchange='NSE'):
     """Analyze all tokens using advanced strategies in parallel."""
     results = []
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         future_to_token = {
             executor.submit(analyze_stock_advanced, alice, token, strategy, exchange): token
             for token in tokens
@@ -276,6 +347,10 @@ def analyze_all_tokens_advanced(alice, tokens, strategy, exchange='NSE'):
             except Exception as e:
                 print(f"Error processing token {token}: {e}")
 
+    results.sort(key=lambda x: x.get("Strength", 0), reverse=True)
+    # Price Action Breakout: only the highest-confidence bullish names
+    if strategy == "Price Action Breakout":
+        return results[:5]
     return results
 
 

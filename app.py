@@ -443,12 +443,19 @@ strategy_descriptions = {
     },
     "Price Action Breakout": {
         "description": """
-            - Identifies strong breakouts with volume confirmation
-            - Analyzes candlestick patterns and price action
-            - Considers multiple timeframe confirmation
-            - Includes volume profile analysis
+            🚀 **Bullish Price Action Breakout (Top 5)**
+
+            Shows only the **5 highest-confidence bullish** setups.
+
+            **Must have:**
+            - Not in a downtrend (no bearish engulfing)
+            - Breakout / near 20-day high **or** bullish candle pattern
+            - Volume confirmation preferred
+            - Strength score ≥ 55
+
+            **Best for:** Catching bullish breakouts with conviction
         """,
-        "learning": "Classic price action strategy focusing on pattern recognition."
+        "learning": "Fewer, higher-quality bullish breakouts beat a long list of weak signals."
     },
     "Volume Profile Analysis": {
         "description": """
@@ -542,20 +549,30 @@ if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
                 )
                 scan_stats = None
 
-        # Apply tier limits
-        tier_limits = {"Free": 10, "Premium": 50, "Pro": None}
-        result_limit = tier_limits[st.session_state.user_tier]
-        total_found = len(screened_stocks)
+        # Apply tier limits (Price Action Breakout already capped at top 5 bullish)
+        if strategy == "Price Action Breakout":
+            result_limit = 5
+        else:
+            tier_limits = {"Free": 10, "Premium": 50, "Pro": None}
+            result_limit = tier_limits[st.session_state.user_tier]
 
+        total_found = len(screened_stocks)
         if result_limit and total_found > result_limit:
-            st.warning(
-                f"⚠️ Found {total_found} stocks, but {st.session_state.user_tier} tier "
-                f"shows top {result_limit}. Upgrade for full access!"
-            )
+            if strategy != "Price Action Breakout":
+                st.warning(
+                    f"⚠️ Found {total_found} stocks, but {st.session_state.user_tier} tier "
+                    f"shows top {result_limit}. Upgrade for full access!"
+                )
             screened_stocks = screened_stocks[:result_limit]
 
         if screened_stocks:
-            st.success(f"✅ Found {len(screened_stocks)} stocks matching **{strategy}**")
+            if strategy == "Price Action Breakout":
+                st.success(
+                    f"✅ Top {len(screened_stocks)} **bullish** breakout picks "
+                    f"(highest confidence)"
+                )
+            else:
+                st.success(f"✅ Found {len(screened_stocks)} stocks matching **{strategy}**")
 
             # === EDUCATIONAL COMPARISON (Premium/Pro only) ===
             if st.session_state.show_educational and st.session_state.user_tier in ["Premium", "Pro"]:
