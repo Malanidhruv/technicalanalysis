@@ -289,14 +289,16 @@ def analyze_market_leaders(df, instrument):
     """
     Find stocks showing exceptional strength.
 
-    Criteria:
-    - Near 52-week high (within 10%)
-    - Strong 3-month performance (>10%)
-    - Trend strength (ADX > 25)
-    - Above 50 EMA
+    Criteria (scored; need strength >= 55):
+    - Near range high (within ~15% of ~1Y high)
+    - Positive 3-month performance
+    - Trend strength (ADX)
+    - Above 50 EMA + decent volume
     """
     try:
-        if len(df) < 252:
+        # Alice often returns <252 bars for a 365-day request (weekends/holidays).
+        # Use whatever ~1Y window we have instead of hard-failing.
+        if len(df) < 120:
             return None
 
         df['50_EMA'] = calculate_ema(df['close'], 50)
@@ -304,42 +306,55 @@ def analyze_market_leaders(df, instrument):
         adx = calculate_adx(df)
 
         current_price = df['close'].iloc[-1]
+        lookback = min(len(df), 252)
 
-        # 52-week metrics
-        week_52_high = df['high'].iloc[-252:].max()
+        # ~52-week / available-range high
+        week_52_high = df['high'].iloc[-lookback:].max()
         distance_from_high = ((week_52_high - current_price) / week_52_high) * 100
-        near_52w_high = distance_from_high <= 10
 
-        # 3-month performance
-        price_3m_ago = df['close'].iloc[-63] if len(df) > 63 else df['close'].iloc[0]
+        # 3-month performance (~63 trading days)
+        lookback_3m = min(63, len(df) - 1)
+        price_3m_ago = df['close'].iloc[-lookback_3m]
         performance_3m = ((current_price - price_3m_ago) / price_3m_ago) * 100
 
-        # Trend strength
-        adx_val = adx.iloc[-1] if len(adx) > 0 else 0
-        strong_trend = adx_val > 25
+        adx_val = float(adx.iloc[-1]) if len(adx) > 0 else 0.0
 
-        # Volume consistency
         vol_analysis = calculate_volume_analysis(df)
-        consistent_volume = vol_analysis['ratio_20'] > 0.7
-
-        # Above key EMA
+        consistent_volume = vol_analysis['ratio_20'] > 0.6
         above_50ema = current_price > df['50_EMA'].iloc[-1]
 
         strength = 0
-        if near_52w_high:
+        # Partial credit for proximity to highs (market rarely parks everyone inside 10%)
+        if distance_from_high <= 5:
             strength += 30
-        if performance_3m > 15:
+        elif distance_from_high <= 10:
+            strength += 25
+        elif distance_from_high <= 15:
+            strength += 18
+        elif distance_from_high <= 20:
+            strength += 10
+
+        if performance_3m > 20:
             strength += 25
         elif performance_3m > 10:
-            strength += 15
-        if strong_trend:
+            strength += 18
+        elif performance_3m > 5:
+            strength += 10
+
+        if adx_val > 30:
             strength += 25
+        elif adx_val > 20:
+            strength += 18
+        elif adx_val > 15:
+            strength += 10
+
         if consistent_volume:
             strength += 10
         if above_50ema:
             strength += 10
 
-        if strength >= 70:
+        # Must still look like a leader: above 50 EMA and not far off highs
+        if strength >= 55 and above_50ema and distance_from_high <= 20 and performance_3m > 0:
             return {
                 'Name': instrument.symbol,
                 'Close': round(current_price, 2),
@@ -351,7 +366,7 @@ def analyze_market_leaders(df, instrument):
                 'Pattern': 'Market Leader',
                 'Educational_Note': (
                     f"Strong performer: +{performance_3m:.1f}% in 3M. "
-                    f"Only {distance_from_high:.1f}% from 52W high. Leading the market."
+                    f"Only {distance_from_high:.1f}% from range high. Leading the market."
                 )
             }
 
@@ -572,9 +587,10 @@ def analyze_bearish(df, instrument):
 def analyze_stock(alice, token, strategy, exchange='NSE'):
     """Main analysis function with strategy routing."""
     try:
+        # ~420 calendar days ≈ 290 trading days — enough for 200 EMA / ~1Y high
         instrument, df = get_cached_historical_data(
             alice, token,
-            datetime.now() - timedelta(days=365),
+            datetime.now() - timedelta(days=420),
             datetime.now(),
             "D",
             exchange
@@ -616,7 +632,7 @@ def _analyze_stock_meta(alice, token, strategy, exchange='NSE'):
     try:
         instrument, df = get_cached_historical_data(
             alice, token,
-            datetime.now() - timedelta(days=365),
+            datetime.now() - timedelta(days=420),
             datetime.now(),
             "D",
             exchange

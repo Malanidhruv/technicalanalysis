@@ -420,10 +420,10 @@ strategy_descriptions = {
             Finds stocks showing exceptional relative strength.
 
             **What it finds:**
-            - Near 52-week highs
-            - Outperforming the market
-            - Strong trend (ADX > 25)
-            - Consistent volume
+            - Near ~1-year highs (within ~15–20%)
+            - Positive 3-month performance
+            - Meaningful trend strength (ADX)
+            - Above 50 EMA with decent volume
 
             **Best for:** Finding the strongest stocks, momentum trading
             **Risk:** Leaders can become laggards - monitor closely
