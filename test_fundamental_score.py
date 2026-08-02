@@ -49,6 +49,19 @@ def main():
     s2, _ = fundamental_score(strong)
     assert s2 > score
 
+    # IDEA-style tiny-base EPS % must be excluded, not maxed out
+    from fundamental_score import score_growth_momentum
+    distorted = CompanyFundamentals(
+        name="IDEAISH",
+        revenue_growth_yoy=3.0,
+        revenue_growth_qoq=0.1,
+        eps_growth_yoy=183.0,
+        eps_growth_qoq=1079.0,
+    )
+    _, gdetail = score_growth_momentum(distorted)
+    assert "distorted" in gdetail["eps_growth"][1]
+    assert gdetail["eps_growth"][0] == 6.0  # neutral half of 12 when both legs excluded
+
     df = pd.DataFrame({
         "open": [10 + i * 0.1 for i in range(80)],
         "high": [11 + i * 0.1 for i in range(80)],

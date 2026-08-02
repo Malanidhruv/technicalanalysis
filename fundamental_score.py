@@ -121,10 +121,19 @@ _QOQ_GROWTH_THRESHOLDS = [(6, 1.0), (3, 0.67), (0, 0.33)]     # ~4x smaller scal
 _GROWTH_BLEND_WEIGHTS = (0.65, 0.35)  # (qoq_weight, yoy_weight)
 
 
+# Growth % computed off a tiny/near-zero prior-period base (e.g. a loss
+# narrowing from -50cr to -2cr) produces mathematically extreme values that
+# don't reflect real momentum. Beyond this magnitude, treat the figure as
+# unreliable rather than scoring it (usually maxing it out, which is worse).
+_GROWTH_SANITY_CAP_PCT = 300
+
+
 def _growth_component_score(value, thresholds):
     """Score a single growth figure (0.0-1.0) against thresholds sized for its own scale."""
     if value is None:
         return None
+    if abs(value) > _GROWTH_SANITY_CAP_PCT:
+        return None  # likely distorted by a tiny/negative base - don't trust it
     for min_val, frac in thresholds:
         if value >= min_val:
             return frac
@@ -138,6 +147,13 @@ def _blended_growth_score(yoy, qoq, max_score):
     This is what lets a genuinely strong quarter (e.g. 5%+ QoQ) score well
     even though 5% would look weak on a YoY scale.
     """
+    def _reason(value, score):
+        if value is None:
+            return "missing"
+        if score is None:
+            return f"{value:.1f}% flagged as distorted (>{_GROWTH_SANITY_CAP_PCT}%, likely tiny base) - excluded"
+        return None
+
     qoq_w, yoy_w = _GROWTH_BLEND_WEIGHTS
     qoq_score = _growth_component_score(qoq, _QOQ_GROWTH_THRESHOLDS)
     yoy_score = _growth_component_score(yoy, _YOY_GROWTH_THRESHOLDS)
@@ -147,13 +163,15 @@ def _blended_growth_score(yoy, qoq, max_score):
         note = f"QoQ={qoq:.1f}% (scored {qoq_score:.2f}), YoY={yoy:.1f}% (scored {yoy_score:.2f})"
     elif qoq_score is not None:
         frac = qoq_score
-        note = f"QoQ={qoq:.1f}% only (scored {qoq_score:.2f}), YoY missing"
+        note = f"QoQ={qoq:.1f}% only (scored {qoq_score:.2f}), YoY {_reason(yoy, yoy_score)}"
     elif yoy_score is not None:
         frac = yoy_score
-        note = f"YoY={yoy:.1f}% only (scored {yoy_score:.2f}), QoQ missing"
+        note = f"YoY={yoy:.1f}% only (scored {yoy_score:.2f}), QoQ {_reason(qoq, qoq_score)}"
     else:
         frac = 0.5
-        note = "both YoY and QoQ missing -> neutral half-credit"
+        qoq_r = _reason(qoq, qoq_score) or "missing"
+        yoy_r = _reason(yoy, yoy_score) or "missing"
+        note = f"QoQ {qoq_r}, YoY {yoy_r} -> neutral half-credit"
 
     return frac * max_score, note
 
