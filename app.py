@@ -298,8 +298,15 @@ tab_tech, tab_swing = st.tabs([
 ])
 
 with tab_swing:
-    from swing_setup import render_swing_setup_tab
-    render_swing_setup_tab(alice)
+    try:
+        from swing_setup import render_swing_setup_tab
+        render_swing_setup_tab(alice)
+    except ImportError as exc:
+        st.error(
+            f"Swing Setup dependencies missing: {exc}. "
+            "Ensure `beautifulsoup4` is in requirements.txt, then "
+            "Manage app → Reboot so Streamlit Cloud reinstalls packages."
+        )
 
 with tab_tech:
     # ===== EXCHANGE TOGGLE =====

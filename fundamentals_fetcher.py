@@ -16,9 +16,20 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import requests
-from bs4 import BeautifulSoup
 
 from fundamental_score import CompanyFundamentals
+
+
+def _bs4():
+    """Lazy import so Technical Screener still loads if Cloud hasn't installed bs4 yet."""
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError as exc:
+        raise ImportError(
+            "beautifulsoup4 is required for Swing Setup fundamentals. "
+            "Add beautifulsoup4 to requirements.txt and reboot the Streamlit app."
+        ) from exc
+    return BeautifulSoup
 
 _ROOT = Path(__file__).resolve().parent
 _CACHE_DB = _ROOT / "data" / "fundamentals_cache.sqlite"
@@ -128,7 +139,7 @@ def _parse_number(text: str) -> Optional[float]:
         return None
 
 
-def _top_ratios(soup: BeautifulSoup) -> Dict[str, float]:
+def _top_ratios(soup) -> Dict[str, float]:
     out: Dict[str, float] = {}
     for li in soup.select("#top-ratios li, li.flex.flex-space-between"):
         name_el = li.select_one(".name") or li.select_one("span.name")
@@ -148,7 +159,7 @@ def _top_ratios(soup: BeautifulSoup) -> Dict[str, float]:
     return out
 
 
-def _table_rows(soup: BeautifulSoup, section_id: str) -> Dict[str, List[Optional[float]]]:
+def _table_rows(soup, section_id: str) -> Dict[str, List[Optional[float]]]:
     section = soup.find(id=section_id)
     if not section:
         return {}
@@ -194,7 +205,7 @@ def _growth_pct(curr: Optional[float], prev: Optional[float]) -> Optional[float]
     return ((curr - prev) / abs(prev)) * 100.0
 
 
-def _parse_peers_avg_pe(soup: BeautifulSoup) -> Optional[float]:
+def _parse_peers_avg_pe(soup) -> Optional[float]:
     peers = soup.find(id="peers")
     if not peers:
         return None
@@ -222,7 +233,7 @@ def _parse_peers_avg_pe(soup: BeautifulSoup) -> Optional[float]:
     return sum(pes) / len(pes)
 
 
-def _parse_shareholding(soup: BeautifulSoup) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+def _parse_shareholding(soup) -> Tuple[Optional[float], Optional[float], Optional[float]]:
     for sid in ("quarterly-shp", "yearly-shp", "shareholding"):
         rows = _table_rows(soup, sid)
         if not rows:
@@ -249,7 +260,7 @@ def _trading_days_between(start: datetime, end: datetime) -> int:
     return days
 
 
-def _days_since_last_result(soup: BeautifulSoup) -> Optional[int]:
+def _days_since_last_result(soup) -> Optional[int]:
     """
     Best-effort: latest quarterly column header (Mon YYYY) or 'Latest results' text.
     Leave None if not parseable — scorer treats that as neutral.
@@ -292,7 +303,8 @@ def _days_since_last_result(soup: BeautifulSoup) -> Optional[int]:
     return None
 
 
-def _soup_from_url(url: str) -> Optional[BeautifulSoup]:
+def _soup_from_url(url: str):
+    BeautifulSoup = _bs4()
     _throttle()
     resp = requests.get(url, headers=_HEADERS, timeout=25)
     if resp.status_code == 404:
@@ -301,7 +313,7 @@ def _soup_from_url(url: str) -> Optional[BeautifulSoup]:
     return BeautifulSoup(resp.text, "html.parser")
 
 
-def _build_fundamentals(symbol: str, soup: BeautifulSoup, statement_type: str) -> CompanyFundamentals:
+def _build_fundamentals(symbol: str, soup, statement_type: str) -> CompanyFundamentals:
     top = _top_ratios(soup)
     pnl = _table_rows(soup, "profit-loss")       # annual
     quarters = _table_rows(soup, "quarters")     # quarterly
