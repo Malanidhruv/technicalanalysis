@@ -345,11 +345,18 @@ def compare_stocks_educational(results_list):
     comparison = []
     
     for result in results_list:
+        pattern = result.get('Pattern')
+        if not pattern and result.get('Patterns'):
+            patterns = result['Patterns']
+            pattern = ', '.join(patterns) if isinstance(patterns, list) else str(patterns)
+        if not pattern and result.get('Market_Structure'):
+            pattern = result['Market_Structure']
+
         stock_info = {
             'name': result.get('Name', 'Unknown'),
             'price': result.get('Close', 0),
             'strength': result.get('Strength', 0),
-            'pattern': result.get('Pattern', 'N/A'),
+            'pattern': pattern or 'N/A',
             'why_strong': []
         }
         

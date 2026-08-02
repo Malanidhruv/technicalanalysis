@@ -3,6 +3,8 @@ import requests
 import streamlit as st
 from datetime import datetime
 
+from symbol_lookup import token_to_symbol
+
 CHART_URLS = [
     "https://ant.aliceblueonline.com/open-api/od/ChartAPIService/api/chart/history",
     "https://ant.aliceblueonline.com/rest/AliceBlueAPIService/api/chart/history",
@@ -11,9 +13,11 @@ DAILY_RESOLUTIONS = ("1D", "D")
 
 
 class Instrument:
-    def __init__(self, symbol, exchange="NSE"):
-        self.symbol = symbol
+    def __init__(self, token, exchange="NSE", symbol=None):
+        self.token = str(token)
         self.exchange = exchange
+        # Display name (e.g. RELIANCE); API calls use .token
+        self.symbol = symbol or token_to_symbol(token, exchange)
 
 
 def initialize_alice():
@@ -43,10 +47,11 @@ class Aliceblue:
             exch = "BSE"
         else:
             exch = "NSE"
-        return Instrument(str(token), exch)
+        return Instrument(token, exch)
 
     def get_historical(self, instrument, from_date, to_date, interval="D", exchange=None):
         exch = exchange if exchange else instrument.exchange
+        api_token = getattr(instrument, "token", None) or instrument.symbol
 
         if isinstance(from_date, datetime):
             from_ts = int(from_date.timestamp() * 1000)
@@ -64,7 +69,7 @@ class Aliceblue:
         for url in CHART_URLS:
             for resolution in resolutions:
                 payload = {
-                    "token": str(instrument.symbol),
+                    "token": str(api_token),
                     "resolution": resolution,
                     "from": str(from_ts),
                     "to": str(to_ts),
