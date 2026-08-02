@@ -316,11 +316,15 @@ col1, col2 = st.columns(2)
 
 with col1:
     available_lists = get_stock_lists_for_exchange(st.session_state.selected_exchange)
-    selected_list = st.selectbox(
+    list_labels = {
+        f"{name} ({len(tokens)})": name for name, tokens in available_lists.items()
+    }
+    selected_label = st.selectbox(
         "Select Stock List",
-        list(available_lists.keys()),
+        list(list_labels.keys()),
         help="Choose a list of stocks to analyze"
     )
+    selected_list = list_labels[selected_label]
 
 with col2:
     if st.session_state.user_tier == "Free":
