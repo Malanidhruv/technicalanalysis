@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
 import datetime
+from urllib.parse import parse_qs, urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from alice_client import initialize_alice
 from session_manager import generate_session
-from api_storage import save_session, get_session
-import webbrowser
+from api_storage import save_session, get_session, get_user_id
 from advanced_analysis import (
     analyze_all_tokens_advanced,
     analyze_all_tokens_custom
@@ -43,6 +43,30 @@ def _qp_get(params, name):
     return None
 
 
+def _parse_auth_from_text(text):
+    """Extract authCode and userId from a redirect URL or query string."""
+    text = (text or "").strip()
+    if not text:
+        return None, None
+
+    query = text
+    if "?" in text:
+        query = urlparse(text).query
+    elif "=" in text:
+        query = text.lstrip("?")
+
+    params = parse_qs(query)
+    auth_code = user_id = None
+    for key, values in params.items():
+        if not values:
+            continue
+        if key.lower() == "authcode":
+            auth_code = values[0].strip()
+        elif key.lower() == "userid":
+            user_id = values[0].strip()
+    return auth_code, user_id
+
+
 def _complete_login(auth_code, user_id):
     """Exchange AliceBlue auth code for a session and persist it."""
     if not auth_code or not user_id:
@@ -52,7 +76,8 @@ def _complete_login(auth_code, user_id):
     session = generate_session(auth_code, user_id)
     if session:
         st.session_state["session"] = session
-        save_session(session)
+        st.session_state["user_id"] = user_id
+        save_session(session, user_id)
         st.query_params.clear()
         st.rerun()
     return bool(session)
@@ -74,8 +99,11 @@ if auth_code and user_id:
 # ===== LOAD SAVED SESSION =====
 if "session" not in st.session_state:
     stored_session = get_session()
+    stored_user_id = get_user_id()
     if stored_session:
         st.session_state["session"] = stored_session
+    if stored_user_id:
+        st.session_state["user_id"] = stored_user_id
 
 # ===== STYLES =====
 st.markdown("""
@@ -169,40 +197,55 @@ with st.sidebar:
                 "or add secrets in Streamlit Cloud (see `.streamlit/secrets.toml.example`)."
             )
 
-        if st.button("🔐 Login to AliceBlue", use_container_width=True):
-            if not login_url:
-                st.error("AliceBlue app key not configured. Set ALICEBLUE_APP_KEY or add to .streamlit/secrets.toml.")
-            else:
-                webbrowser.open(login_url)
-
-        with st.expander("Localhost login (if redirect goes to wrong site)", expanded=True):
-            st.markdown(
-                "AliceBlue sends you back to the **Redirect URL** registered for your app key. "
-                "If that points to another Streamlit site (e.g. Learning Lab), use this instead:"
-            )
-            st.markdown(
-                "1. Click **Login to AliceBlue** above and sign in  \n"
-                "2. After login, copy `authCode` and `userId` from the browser address bar  \n"
-                "3. Paste them below and click **Connect**"
-            )
-            manual_auth = st.text_input("authCode", key="manual_auth_code")
-            manual_user = st.text_input("userId", key="manual_user_id")
-            if st.button("Connect", use_container_width=True):
-                _complete_login(manual_auth.strip(), manual_user.strip())
-
+        if login_url:
+            # Streamlit Cloud cannot open the user's browser via webbrowser.open().
+            st.link_button("🔐 Login to AliceBlue", login_url, use_container_width=True)
             st.caption(
-                "Permanent fix: at [AliceBlue Developer Portal](https://a3.aliceblueonline.com/), "
-                "set your app's Redirect URL to `http://localhost:8501`"
+                "After login you return to your Redirect URL "
+                "(`https://learninglab.streamlit.app/`) with `authCode` + `userId`. "
+                "This app reads those params automatically."
             )
+        else:
+            st.error(
+                "AliceBlue app key not configured. On Streamlit Cloud add Secrets "
+                "(see `.streamlit/secrets.toml.example`)."
+            )
+
+        with st.expander("Manual login (if auto-redirect fails)", expanded=False):
+            st.markdown(
+                "Paste the full redirect URL, or enter `authCode` and `userId`:"
+            )
+            pasted_url = st.text_area(
+                "Paste redirect URL",
+                placeholder="https://learninglab.streamlit.app/?authCode=XXXX&userId=YYYY",
+                key="manual_redirect_url",
+                height=80,
+            )
+            col1, col2 = st.columns(2)
+            with col1:
+                manual_auth = st.text_input("authCode", key="manual_auth_code")
+            with col2:
+                manual_user = st.text_input("userId", key="manual_user_id")
+
+            if st.button("Connect", use_container_width=True, type="primary"):
+                parsed_auth, parsed_user = _parse_auth_from_text(pasted_url)
+                auth_val = manual_auth.strip() or (parsed_auth or "")
+                user_val = manual_user.strip() or (parsed_user or "")
+                if not _complete_login(auth_val, user_val):
+                    st.error("❌ Login failed. Get a fresh authCode — it expires quickly.")
 
         st.warning("Please login to continue")
         st.stop()  # Stop rendering until logged in
     else:
         st.success("✅ Logged in")
+        if "user_id" not in st.session_state:
+            st.warning("Session outdated — please log out and log in again.")
         if st.button("🚪 Logout", use_container_width=True):
             from api_storage import clear_session
             clear_session()
             del st.session_state["session"]
+            if "user_id" in st.session_state:
+                del st.session_state["user_id"]
             st.rerun()
 
     st.markdown("---")
@@ -656,10 +699,16 @@ if st.button("🔍 Start Screening", use_container_width=True, type="primary"):
                 st.markdown(
                     f"**Scan summary:** {scan_stats['tokens']} symbols scanned, "
                     f"{scan_stats['with_data']} returned price data, "
+                    f"{scan_stats.get('no_data', 0)} had no data, "
                     f"{scan_stats['matched']} matched criteria, "
                     f"{scan_stats['errors']} API errors."
                 )
-                if scan_stats["with_data"] == 0:
+                if scan_stats["errors"] > 0 and scan_stats["errors"] == scan_stats["tokens"]:
+                    st.error(
+                        "All API calls failed — log out and log in again with a fresh authCode. "
+                        "If the problem persists, try after 5:30 PM IST when historical data is available."
+                    )
+                elif scan_stats["with_data"] == 0 and scan_stats.get("no_data", 0) > 0:
                     st.error(
                         "No historical data was returned. AliceBlue daily data is often "
                         "unavailable during market hours (9:15 AM–3:30 PM IST). "

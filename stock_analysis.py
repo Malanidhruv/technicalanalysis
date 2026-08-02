@@ -655,8 +655,8 @@ def _analyze_stock_meta(alice, token, strategy, exchange='NSE'):
 def analyze_stock_batch(alice, tokens, strategy, exchange='NSE', batch_size=50):
     """Analyze a batch of stocks in parallel."""
     results = []
-    stats = {"with_data": 0, "errors": 0}
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    stats = {"with_data": 0, "errors": 0, "no_data": 0}
+    with ThreadPoolExecutor(max_workers=8) as executor:
         future_to_token = {
             executor.submit(_analyze_stock_meta, alice, token, strategy, exchange): token
             for token in tokens[:batch_size]
@@ -667,8 +667,10 @@ def analyze_stock_batch(alice, tokens, strategy, exchange='NSE', batch_size=50):
                 result, meta = future.result()
                 if meta.get("has_data"):
                     stats["with_data"] += 1
-                if meta.get("error"):
+                elif meta.get("error"):
                     stats["errors"] += 1
+                else:
+                    stats["no_data"] += 1
                 if result:
                     results.append(result)
             except Exception as e:
@@ -680,7 +682,7 @@ def analyze_stock_batch(alice, tokens, strategy, exchange='NSE', batch_size=50):
 def analyze_all_tokens(alice, tokens, strategy, exchange='NSE'):
     """Analyze all tokens with optimized batch processing."""
     results = []
-    stats = {"tokens": len(tokens), "with_data": 0, "errors": 0, "matched": 0}
+    stats = {"tokens": len(tokens), "with_data": 0, "errors": 0, "no_data": 0, "matched": 0}
     batch_size = 50
     total_batches = (len(tokens) + batch_size - 1) // batch_size
 
@@ -695,6 +697,7 @@ def analyze_all_tokens(alice, tokens, strategy, exchange='NSE'):
         results.extend(batch_results)
         stats["with_data"] += batch_stats["with_data"]
         stats["errors"] += batch_stats["errors"]
+        stats["no_data"] += batch_stats.get("no_data", 0)
 
     stats["matched"] = len(results)
     results.sort(key=lambda x: x.get("Strength", 0), reverse=True)
